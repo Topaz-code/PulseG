@@ -114,6 +114,27 @@ def create_task(payload: CreateTaskRequest) -> dict[str, Any]:
     return {"task": task.model_dump(mode="json")}
 
 
+@router.get("/statuses")
+def statuses() -> dict[str, Any]:
+    """The status vocabulary, so the UI never hardcodes a label."""
+    return {
+        "statuses": [
+            {"value": status.value, "label": status.value.replace("_", " ").title()} for status in Status
+        ],
+        "human_decisions": [item.value for item in HumanDecision],
+        "lanes": [
+            {"id": lane["id"], "title": lane["title"], "statuses": [status.value for status in lane["statuses"]]}
+            for lane in KANBAN_LANES
+        ],
+    }
+
+
+def _now() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
 @router.get("/{task_id}")
 @guarded("read task")
 def get_task(task_id: str) -> dict[str, Any]:
@@ -331,24 +352,3 @@ def _screenshot_notes(context, task) -> str:
     return (
         f"{len(task.screenshots)} screenshot(s). {screenshot_mcp.describe_modes()['auto']}"
     )
-
-
-@router.get("/statuses")
-def statuses() -> dict[str, Any]:
-    """The status vocabulary, so the UI never hardcodes a label."""
-    return {
-        "statuses": [
-            {"value": status.value, "label": status.value.replace("_", " ").title()} for status in Status
-        ],
-        "human_decisions": [item.value for item in HumanDecision],
-        "lanes": [
-            {"id": lane["id"], "title": lane["title"], "statuses": [status.value for status in lane["statuses"]]}
-            for lane in KANBAN_LANES
-        ],
-    }
-
-
-def _now() -> str:
-    from datetime import datetime, timezone
-
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")

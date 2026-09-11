@@ -31,6 +31,19 @@ class CreateProjectRequest(Strict):
     git_identity: dict[str, str] = Field(default_factory=dict)
 
 
+class WriteProjectFileRequest(Strict):
+    """A human editing one of the project's own documents.
+
+    Deliberately narrow: the project folder is the source of truth, so the person who owns the
+    game must be able to fix a sentence in the design document without waiting for an agent. This
+    is not a general file editor - it refuses binary formats, refuses paths outside the project,
+    and refuses any file an in-flight task has claimed, so it cannot race the team.
+    """
+
+    path: str = Field(min_length=1, max_length=300)
+    content: str = Field(max_length=400_000)
+
+
 class UpdateProjectRequest(Strict):
     name: str | None = Field(default=None, max_length=80)
     genre: str | None = Field(default=None, max_length=40)

@@ -14,13 +14,13 @@ from fastapi import APIRouter, HTTPException, Query
 
 from ...core.events import bus
 from ...core.index import index
-from ...mcp.filesystem_mcp import list_project_files, read_project_file
+from ...mcp.filesystem_mcp import list_project_files, read_project_file, write_project_file
 from ...orchestration import memory, projects
 from ...orchestration.git_ops import GitRepo
 from ...orchestration.projects import PHASES
 from ...runtime import runtime
 from ..deps import board_payload, guarded, require_project
-from ..schemas import CreateProjectRequest, UpdateProjectRequest
+from ..schemas import CreateProjectRequest, UpdateProjectRequest, WriteProjectFileRequest
 
 log = logging.getLogger(__name__)
 
@@ -186,6 +186,54 @@ def read_file(project_id: str, path: str = Query(min_length=1)) -> dict[str, Any
             },
         ) from exc
     return {"path": path, "content": content, "bytes": len(content)}
+
+
+@router.put("/{project_id}/file")
+@guarded("edit a project document")
+def write_file(project_id: str, payload: WriteProjectFileRequest) -> dict[str, Any]:
+    """Save a document the human edited by hand, most often the design or a story file.
+
+    Three refusals are on purpose. A path outside the project is rejected by the resolver, a file
+    an in-flight task is working on is rejected here, and a commit is never made: the edit lands on
+    disk immediately (files win) and enters the project history with the next approved task.
+    """
+    record = projects.get_project(project_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail={"error": "unknown_project", "message": "Not found."})
+    path = projects.project_path_of(record)
+
+    for task in projects.bus_for(record).open_tasks():
+        if payload.path in task.file_claims and task.status.value in {"IN_PROGRESS", "SUBMITTED", "AUDITING"}:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "file_in_flight",
+                    "message": (
+                        f"{payload.path} is being written by {task.task_id} right now. "
+                        "Decide that task first, then edit the file."
+                    ),
+                },
+            )
+
+    try:
+        write_project_file(path, payload.path, payload.content)
+    except (PermissionError, ValueError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "file_not_writable", "message": f"{exc}"},
+        ) from exc
+
+    memory.append_progress(
+        path,
+        f"human edited {payload.path} by hand",
+        agent="human",
+        status="EDITED",
+    )
+    bus.publish(
+        "design_edited",
+        {"project_id": project_id, "path": payload.path, "bytes": len(payload.content.encode("utf-8"))},
+    )
+    return {"path": payload.path, "bytes": len(payload.content.encode("utf-8")), "committed": False}
 
 
 @router.get("/{project_id}/phases")

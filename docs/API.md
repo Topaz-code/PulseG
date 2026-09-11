@@ -4,7 +4,7 @@ Generated from the running application by `scripts/build_api_docs.py` - do not e
 hand. The same document is served at `/openapi.json`, and `/docs` renders it.
 
 - Application: PulseG Studio 0.9.0
-- Routes: 148
+- Routes: 149
 
 ## Error shape
 
@@ -206,6 +206,13 @@ Activity
 
 Read File
 - params: project_id (path, string), path (query, string)
+
+### `PUT /api/projects/{project_id}/file`
+
+Write File
+
+- body: `WriteProjectFileRequest {path: string, content: string}`
+- params: project_id (path, string)
 
 ### `GET /api/projects/{project_id}/files`
 

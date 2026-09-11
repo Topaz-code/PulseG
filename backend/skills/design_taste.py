@@ -77,10 +77,24 @@ def contrast_ratio(foreground: str, background: str) -> float:
     return (lighter + 0.05) / (darker + 0.05)
 
 
+#: The generated token file that ships with the app, used when the studio home has none yet.
+BUNDLED_THEME = Path(__file__).resolve().parents[1] / "core" / "theme.json"
+
+
 def load_theme() -> dict[str, Any]:
+    """The user's theme if they have one, otherwise the bundled generated token set.
+
+    Order matters: the studio home wins, because Settings can edit the theme and the user's
+    choice must survive a restart. The bundled file is written by ``npm run tokens`` and is the
+    same token set the frontend compiles against, so backend contrast checks and the UI cannot
+    disagree about what the palette is.
+    """
     payload = read_json(theme_file(), default=None)
     if isinstance(payload, dict) and payload:
         return payload
+    bundled = read_json(BUNDLED_THEME, default=None)
+    if isinstance(bundled, dict) and bundled:
+        return bundled
     return {
         "colors": {
             "charcoal-bg": "#1E1C21",
@@ -91,7 +105,7 @@ def load_theme() -> dict[str, Any]:
             "blue-slate": "#5D737E",
         },
         "scales": {},
-        "note": "Bundled default. Run scripts/generate-theme.mjs to write a full 10-step scale.",
+        "note": "Bundled fallback. Run `npm run tokens` to generate the full 10-step scales.",
     }
 
 

@@ -527,3 +527,76 @@ def test_websocket_health_is_reachable_without_a_project(client):
     assert body["ok"] is True
     assert "subscribers" in body and "last_seq" in body
     assert body["heartbeat_s"] >= 5
+
+
+def test_no_literal_route_is_shadowed_by_a_path_parameter(client):
+    """A literal route registered after a ``/{parameter}`` route never runs.
+
+    This is the quietest way for an API to break: the endpoint exists, the docs list it, and every
+    call lands on the parameterised route above it and 404s with "no project called statuses".
+    FastAPI matches in registration order, so the check below walks the real route table and
+    asserts that for every pair that differs only in a parameter slot, the literal one comes
+    first.
+    """
+    app = client.app
+    routes = [
+        (sorted(route.methods)[0], route.path)
+        for route in app.routes
+        if getattr(route, "methods", None) and route.path.startswith("/api")
+    ]
+
+    def same_shape(earlier: str, later: str) -> bool:
+        first = earlier.strip("/").split("/")
+        second = later.strip("/").split("/")
+        if len(first) != len(second):
+            return False
+        for left, right in zip(first, second):
+            if left == right or left.startswith("{"):
+                continue
+            return False
+        return any(left.startswith("{") for left, right in zip(first, second) if left != right)
+
+    shadowed: list[str] = []
+    for index, (method, path) in enumerate(routes):
+        for earlier_method, earlier_path in routes[:index]:
+            if earlier_method == method and same_shape(earlier_path, path):
+                shadowed.append(f"{method} {path} is shadowed by {earlier_method} {earlier_path}")
+    assert shadowed == [], "literal routes registered after a path parameter: " + "; ".join(shadowed)
+
+
+def test_a_human_can_edit_a_document_and_the_bus_rules_still_apply(client):
+    """The design document is the human's file. Editing it must not look like an agent write.
+
+    Three properties are asserted: the edit lands on disk and is readable again, it is refused when
+    an in-flight task has claimed the same file (so a hand edit can never race the team), and it
+    never creates a commit - committing stays the reward for approving a task.
+    """
+    project = client.post("/api/projects", json={"name": "Editorial", "mode": "fresh"}).json()["project"]
+    project_id = project["project_id"]
+    body = {"path": "memory/gdd.md", "content": "# Editorial\n\n## SUMMARY\n\nA quiet puzzle about tides.\n"}
+
+    saved = client.put(f"/api/projects/{project_id}/file", json=body)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["committed"] is False
+
+    read_back = client.get(f"/api/projects/{project_id}/file", params={"path": "memory/gdd.md"}).json()
+    assert "quiet puzzle about tides" in read_back["content"]
+
+    # A committed history entry would mean this path had found a way around the approval gate.
+    log = client.get("/api/git/log").json()
+    assert log["commits"] == []
+
+    # Paths outside the project are refused, not silently written.
+    outside = client.put(
+        f"/api/projects/{project_id}/file",
+        json={"path": "../escaped.md", "content": "should not exist"},
+    )
+    assert outside.status_code == 422
+    assert outside.json()["error"] == "file_not_writable"
+
+    # A binary format is refused by the same guard the agents go through.
+    binary = client.put(
+        f"/api/projects/{project_id}/file",
+        json={"path": "assets/hero.png", "content": "not really a png"},
+    )
+    assert binary.status_code == 422
