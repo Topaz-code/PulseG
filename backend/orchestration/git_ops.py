@@ -130,12 +130,12 @@ class GitRepo:
         if missing:
             path.write_text(existing.rstrip() + "\n" + "\n".join(missing) + "\n", encoding="utf-8")
 
-    def identity(self) -> dict[str, str]:
+    def identity(self) -> dict[str, Any]:
         if not self.available:
-            return {"name": "", "email": "", "available": "false"}
+            return {"name": "", "email": "", "available": False}
         name = self._run("config", "user.name", check=False).stdout.strip()
         email = self._run("config", "user.email", check=False).stdout.strip()
-        return {"name": name, "email": email, "available": "true"}
+        return {"name": name, "email": email, "available": True}
 
     def set_identity(self, name: str, email: str) -> None:
         self._run("config", "user.name", name)
@@ -319,11 +319,16 @@ def git_available() -> bool:
     return GitRepo.git_executable() is not None
 
 
-def detect_identity() -> dict[str, str]:
-    """Read the machine's global git identity for the Setup Wizard."""
+def detect_identity() -> dict[str, Any]:
+    """Read the machine's global git identity for the Setup Wizard.
+
+    `available` is a real boolean. It used to be the string "true"/"false", which is truthy either
+    way in JavaScript - the exact kind of field a frontend checks with `if (identity.available)` and
+    then gets wrong for every machine that has no git identity.
+    """
     executable = GitRepo.git_executable()
     if not executable:
-        return {"available": "false", "name": "", "email": ""}
+        return {"available": False, "name": "", "email": ""}
     def read(key: str) -> str:
         result = subprocess.run(  # noqa: S603
             [executable, "config", "--global", key],
@@ -333,7 +338,7 @@ def detect_identity() -> dict[str, str]:
         )
         return result.stdout.strip()
 
-    return {"available": "true", "name": read("user.name"), "email": read("user.email")}
+    return {"available": True, "name": read("user.name"), "email": read("user.email")}
 
 
 def set_global_identity(name: str, email: str) -> tuple[bool, str]:

@@ -40,6 +40,10 @@ def test_first_run_reports_what_is_missing(client):
     assert body["git_available"] in (True, False)
     assert len(body["steps"]) >= 5
     assert body["steps"][0]["id"] == "welcome"
+    # A boolean, not the string "true"/"false": a frontend that checks this flag would otherwise
+    # treat "false" as true, on exactly the machines with no git identity.
+    assert body["git_identity"]["available"] in (True, False)
+    assert isinstance(body["git_identity"]["available"], bool)
 
 
 def test_operations_requiring_a_project_say_so_clearly(client):

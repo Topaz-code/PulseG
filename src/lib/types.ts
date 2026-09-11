@@ -394,7 +394,7 @@ export type FirstRun = {
   godot_configured: boolean;
   godot_detected: string[];
   git_available: boolean;
-  git_identity: { available: string; name: string; email: string };
+  git_identity: { available: boolean; name: string; email: string };
   has_any_key: boolean;
   has_project: boolean;
   keyless_providers: Array<{ id: string; name: string; note: string; docs_url: string }>;

@@ -411,7 +411,7 @@ export function fixtureFor(path: string, params: URLSearchParams = new URLSearch
     },
     "/api/settings/git": {
       global: { available: true, name: "PulseG Studio", email: "studio@pulseg.local" },
-      project: { initialised: true, identity: { name: "", email: "", available: "true" }, branch: "main", status: {} },
+      project: { initialised: true, identity: { name: "", email: "", available: true }, branch: "main", status: {} },
       available: true,
       config: { user_name: "PulseG Studio", user_email: "studio@pulseg.local", auto_init: true, branch_per_phase: true, commit_on_approval_only: true },
     },
@@ -455,7 +455,7 @@ export function fixtureFor(path: string, params: URLSearchParams = new URLSearch
       godot_configured: true,
       godot_detected: ["/usr/bin/godot"],
       git_available: true,
-      git_identity: { available: "true", name: "PulseG Studio", email: "studio@pulseg.local" },
+      git_identity: { available: true, name: "PulseG Studio", email: "studio@pulseg.local" },
       has_any_key: true,
       has_project: true,
       keyless_providers: [],
