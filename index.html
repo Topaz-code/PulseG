@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- The Tauri shell sets the real title bar text; this is the browser tab and the fallback. -->
+    <title>PulseG Studio</title>
+    <meta
+      name="description"
+      content="PulseG Studio - describe a game, approve the work, play the result."
+    />
+  </head>
+  <body class="bg-charcoal-900 text-mint-100 antialiased">
+    <!--
+      No-JavaScript fallback. If the bundle fails to load, a person sees this instead of a blank
+      window - which is exactly the moment they need to be told what to do.
+    -->
+    <div id="root"></div>
+    <noscript>
+      <div style="padding: 24px; font-family: sans-serif">
+        PulseG Studio needs JavaScript to run. Reinstall the app if this message persists.
+      </div>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

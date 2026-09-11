@@ -1,0 +1,102 @@
+/*
+ * Tailwind and the handful of globals the app needs. Colours never appear here as literals:
+ * the CSS variables below are written by scripts/generate-theme.mjs into src/design/theme.json
+ * and injected by src/design/tokens.ts, so the same palette drives CSS and utility classes.
+ */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-app-background text-mint-100 font-sans text-base;
+    overflow: hidden; /* the app owns its own scroll containers; the window never bounces */
+  }
+
+  /* Visible focus ring on everything interactive, using the accent token. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-app-background;
+  }
+
+  ::selection {
+    @apply bg-canary-200 text-charcoal-900;
+  }
+
+  /* A quiet scrollbar that matches the surfaces it sits on. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-app-background;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-surface-700 rounded-md border-2 border-solid border-app-background;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-surface-600;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* Prose defaults for rendered Markdown (GDD, story, reports). */
+  .prose-pulse h1 {
+    @apply text-2xl font-semibold text-mint-100 mt-6 mb-3;
+  }
+  .prose-pulse h2 {
+    @apply text-xl font-semibold text-mint-100 mt-6 mb-2;
+  }
+  .prose-pulse h3 {
+    @apply text-lg font-semibold text-mint-200 mt-4 mb-2;
+  }
+  .prose-pulse p {
+    @apply text-sm leading-relaxed text-mint-200 mb-3;
+  }
+  .prose-pulse ul {
+    @apply list-disc pl-6 mb-3 text-sm text-mint-200;
+  }
+  .prose-pulse ol {
+    @apply list-decimal pl-6 mb-3 text-sm text-mint-200;
+  }
+  .prose-pulse a {
+    @apply text-canary-200 underline decoration-canary-600 underline-offset-2;
+  }
+  .prose-pulse code {
+    @apply font-mono text-xs bg-charcoal-800 px-1 py-0.5 rounded-sm text-teal-300;
+  }
+  .prose-pulse pre {
+    @apply bg-charcoal-800 p-4 rounded-md overflow-x-auto mb-4;
+  }
+  .prose-pulse pre code {
+    @apply bg-transparent p-0;
+  }
+  .prose-pulse blockquote {
+    @apply border-l-2 border-surface-600 pl-4 italic text-mint-300 mb-3;
+  }
+  .prose-pulse table {
+    @apply w-full text-sm mb-4 border-collapse;
+  }
+  .prose-pulse th,
+  .prose-pulse td {
+    @apply border border-app-border px-3 py-2 text-left;
+  }
+}

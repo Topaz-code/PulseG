@@ -1,0 +1,301 @@
+# PulseG Studio changelog.
+# Newest first. Every entry says what changed and what was verified by running it -
+# "it should work" is not an entry, "the test suite covers it" is.
+project: PulseG Studio
+version: 0.9.0
+updated: "2026-09-11"
+
+entries:
+  - date: "2026-09-11"
+    area: runtime
+    summary: >
+      Two live defects from leaving the studio running and reading its real payloads. The Overview
+      screen read `board.run_state`, which /api/tasks/board never sent: the primary button always
+      said "Start the build team" and the status badge always said "Idle", even mid-run. It reads
+      /api/logs/run-state now, the Board type no longer claims a field that never existed, and the
+      fixtures stopped inventing one. Second, the run state reported a blank project_id and
+      project_name after a restart - they were only stamped when a project was switched - so the
+      runtime now stamps them whenever the run state is read. The test suite's own isolation was
+      wrong in the same way: `runtime` is a process-wide singleton and conftest never unbound it, so
+      a test that created a project left the next test seeing a stale active project. conftest
+      resets it now, which exposed a test that had been relying on exactly that leak.
+    verified: >
+      Live: POST /api/logs/run-state/start reported the project name on the running studio, and the
+      board plus run-state payloads were read back over the Vite proxy. python -m pytest - 94 tests
+      pass, including the new "the run state names the project it is running" test; npm test - 17
+      tests pass with the corrected fixtures.
+    notes:
+      - "Both bugs were invisible to green tests: the frontend fixtures had invented board.run_state, and the backend test had been passing on a leaked project."
+
+  - date: "2026-09-11"
+    area: git
+    summary: >
+      /api/git/log now sends a `short` hash with each commit. The dashboard printed `commit.short`
+      and the rows only carried the full sha, so the abbreviation column was blank against the real
+      API - the fixture had invented the field, which is how a fixture can hide a bug. The view also
+      falls back to the sha now, and the row type describes what the endpoint really returns.
+    verified: >
+      Live approval over HTTP on the running studio: POST /api/tasks/TASK_001/approve returned
+      commit sha 1388baa0... on branch phase/1-playable-core, the log row carried author "PulseG
+      Studio" and the matching short hash, and TASK_002 came back unblocked. python -m pytest - 93
+      tests pass, including the added assertion that short == sha[:7].
+    notes:
+      - "Found by comparing the live response keys against the fixture while setting up a live demo project, not by a test."
+
+  - date: "2026-09-11"
+    area: frontend
+    summary: >
+      Setup Wizard defect and a contract check that would have caught it. The "Find Godot on this
+      computer" button called POST /api/settings/godot/detect; the route is GET-only, so the API
+      answered 405 and the button did nothing at all - on the first screen a new user ever sees. It
+      is a GET now, and the wizard's answer is read from either the found path or the first
+      candidate. The wizard also gained four tests (it opens on the Godot step, fills the projects
+      folder from the first-run state, asks over GET, and refuses to finish without a projects
+      folder), and the frontend test setup now unmounts between tests: with `globals: false`
+      Testing Library's automatic cleanup never registers, so trees were stacking up in the document
+      and a query could match a previous test's screen.
+    verified: >
+      npm test - 17 tests pass across three files. python -m pytest backend/tests -q - 93 tests pass,
+      including backend/tests/test_frontend_contract.py, which scrapes every api.get/post/... call
+      site out of src/ and matches its shape against the app's own OpenAPI document. That test names
+      the file and line of an unmatched call and says which verb the API actually serves; a second
+      test proves it fails on a wrong verb, so it cannot pass for the wrong reason.
+    notes:
+      - "The checker normalises both sides into one pattern language first, counting braces so an interpolation like ${sub ? `?sub=${x}` : ''} cannot truncate the path it is matching."
+      - "The 405 was invisible because the mutation had no onError: a failed request looked like a button that did nothing."
+
+  - date: "2026-09-11"
+    area: planning
+    summary: >
+      The intake now keeps the report of what it read from each answer, and the Planning rail shows
+      it. `/api/planning/state` returns `extraction`, `record_answers` writes it into the session
+      state so it survives a reload, and the rail prints one line: either the fields it filled in
+      ("Mechanics, Art direction") or why nothing was read, with a button to the key screen when the
+      reason was a missing provider. Before this, an answer that could not be read left the
+      checklist exactly where it was, which looks identical to the studio ignoring the human.
+      The design-taste audit also learned to skip `.test.tsx` files: the frontend tests live beside
+      the views, and auditing them as screens turned a well-tested codebase into a failing audit.
+    verified: >
+      python -m pytest backend/tests -q - 90 tests pass, including the two-sided API test (demo mode
+      reads an answer and persists the report; a provider that cannot answer is reported with
+      needs_key). npm test - 13 tests pass, including four for the rail's empty, read, unreadable and
+      changed-nothing states. scripts/design_audit.py --check - 9 of 9 screens pass.
+    notes:
+      - "The report is persisted, not just returned: a POST response cannot explain a screen the user reloads."
+      - "stubFixture() lets one frontend test patch a single field of a captured response instead of duplicating it."
+
+  - date: "2026-09-11"
+    area: frontend
+    summary: >
+      Added a frontend test harness (vitest + jsdom + Testing Library) that renders all nine views
+      against a fixture layer built from real API responses. It immediately found three defects the
+      type checker could not: the Overview screen crashed when a provider row had no usage block,
+      the Asset Library filtered by a kind vocabulary the API never emits ("image"/"audio" instead
+      of the backend's sprite/background/tile/ui/sfx/bgm/reference) so every real asset was filtered
+      out and sound was never split into its own section, and asset rows had no name, size or date
+      because library.json only records provenance. The API now fills those three fields in from the
+      file on disk, the screen uses the API's own kinds and audio flag, and counts read "1 file"
+      rather than "1 files".
+    verified: >
+      npm test - 9 view tests pass. python -m pytest backend/tests -q - 88 tests pass, including a
+      new one asserting every asset row carries name/bytes/modified/exists and that a missing file
+      is reported as zero bytes instead of crashing the listing. Type check, production build,
+      pyflakes, build_api_docs --check and verify_pipeline.py were re-run after the change.
+    notes:
+      - "The fixture layer throws on an unmapped endpoint, so a view that starts calling a new URL fails loudly instead of rendering an empty state that a test would happily pass."
+      - "vitest.config.ts is separate from vite.config.ts: test-only keys must not reach the shipping config."
+      - "The check runs in ci/workflows/checks.yml before the bundle is built."
+
+  - date: "2026-09-11"
+    area: orchestration
+    summary: >
+      Fixed two defects that only show up when the studio is actually left running. First, the
+      Prompter re-proposed the same task on every tick, so a run produced dozens of identical
+      copies (TASK_014 through TASK_038 in one minute) and buried the human: the dispatcher now
+      refuses a proposed task whose title, expected outputs or file claims match work that is
+      already open, and says which existing task it matched. Second, approvals silently produced
+      no git commit on a machine with no git identity - the one guarantee the product makes -
+      because git refuses to commit without a name; the commit now carries an explicit fallback
+      identity for that single command, never by writing the user's git config.
+    verified: >
+      test_pipeline.py::test_the_prompter_cannot_flood_the_queue_with_the_same_task (two ticks,
+      one task) and test_api.py::test_approval_commits_even_when_the_machine_has_no_git_identity
+      (commit exists, config untouched). scripts/verify_pipeline.py runs the whole studio through
+      the API - idea, intake, gate, handoff, seed, dispatch, auditor, human approval, git commit -
+      and passes 18 checks.
+
+  - date: "2026-09-11"
+    area: planning
+    summary: >
+      The intake can no longer fail silently. record_answers() now reports exactly what the
+      Planning Agent changed (and why nothing changed when the provider is unavailable), the
+      planning endpoint returns that report, and the demo provider answers the extraction contract
+      so PULSEG_DEMO=1 completes the whole intake instead of stalling on the first screen with the
+      same questions forever.
+    verified: >
+      scripts/verify_pipeline.py asserts the merge, the named changed fields and a complete ledger;
+      the API test suite covers the intake and gate paths.
+
+  - date: "2026-09-11"
+    area: desktop
+    summary: >
+      Added the Tauri v2 shell (src-tauri/): window titled PulseG Studio, Python sidecar spawned on
+      launch and killed on every exit path, single-instance guard so a second launch focuses the
+      first window, capability list limited to what the dashboard needs, and an open_path command
+      so the UI can reveal a project folder in Explorer without the API opening windows itself.
+      Packaging: scripts/build_backend.py freezes the backend with PyInstaller into the
+      external-binary name Tauri expects, scripts/make_icons.py draws the PNG/ICO icon set from the
+      palette, and the Windows CI workflow builds the NSIS + MSI installers and
+      smoke-tests the frozen sidecar's /api/health before packaging. docs/PACKAGING.md records what
+      the user gets and what is still unsigned.
+    verified: >
+      Not compiled here: this sandbox has no Rust toolchain, so the shell, the freeze and the
+      installer are written and reviewed but first run in CI. The sidecar entry point the shell
+      starts (python -m backend.main --port) is the same one scripts/smoke_api.py exercises.
+    notes:
+      - "A packaged app whose backend cannot start is worse than no app, so the Windows workflow starts the frozen binary and waits for /api/health before it bundles anything."
+      - "The installer is unsigned; SmartScreen will warn on first run. Recorded rather than hidden - signing needs a certificate the maintainer owns."
+      - "The workflows live in ci/workflows/ rather than .github/workflows/: the GitHub app token that pushed this work has no 'workflows' permission, so GitHub rejects a push that creates those files. scripts/install_ci_workflows.py copies them into place for a token that has it."
+
+  - date: "2026-09-11"
+    area: frontend
+    summary: >
+      Built the dashboard: React 18 + Vite + Tailwind driven entirely by the generated theme, with
+      React Query for server state, one websocket hook for live updates, and nine views - Overview,
+      Task Board, Task drawer, GDD and Story, Assets, Knowledge, Agent detail, Logs and Live
+      Terminal, Git History, Settings - plus the Setup Wizard, the project gate and the command bar
+      with auto chips and @agent routing. Raised the token generator to the full ten-step ramp per
+      colour so the D.7 checklist passes.
+    verified: >
+      npm run typecheck and npm run build both exit 0; scripts/design_audit.py reports 9 of 9
+      screens passing and 6/6 contrast pairs with zero theme findings; the dev server ran against a
+      live backend on 127.0.0.1:8787 and every endpoint the views read answered 200.
+    notes:
+      - "GET /api/tasks/statuses was registered after /api/tasks/{task_id} and therefore always 404ed; a regression test now walks the route table and fails on any literal route declared after a parameterised one."
+      - "PUT /api/projects/{id}/file is the one human write path to a document: scoped to the project, text only, refused while an in-flight task claims the same file, and never committed."
+
+  - date: "2026-09-11"
+    area: api
+    summary: >
+      Built the whole HTTP + WebSocket surface: backend/api/{deps,schemas,ws}.py, thirteen
+      routers (system, settings, projects, tasks, agents, providers, planning, assets,
+      knowledge, logs, git, design, preview) and backend/main.py with the lifespan hooks the
+      Tauri sidecar needs (bus bind, index rebuild, crash recovery of in-flight tasks).
+      One error envelope for the entire API: {error, message, action, ...extras}.
+    verified: >
+      backend/tests/test_api.py - 31 tests over a real TestClient (health, first-run, Setup
+      Wizard, project lifecycle, grill-me gate, dispatch to the human gate, approve/reject/
+      override, config-only agent addition, provider key masking, file-path scoping, WebSocket
+      hello + replay, OpenAPI). scripts/smoke_api.py - 24 checks against a real
+      `python -m backend.main` process on a socket, including the WebSocket.
+    notes:
+      - "guarded() resolves type hints from the decorated function's own module, otherwise FastAPI turns every request model into a query parameter and every POST 422s."
+      - "Literal routes (/quota, /verification) are declared before /{provider_id}; a parameterised route declared first swallows them."
+      - "An already-approved task now answers 409 approval_refused instead of 500: ApprovalError is mapped in api.deps."
+
+  - date: "2026-09-11"
+    area: notifications
+    summary: >
+      Added notifications/service.py and wired the four real triggers into the dispatcher:
+      needs review, needs intervention (paused), all fallbacks exhausted, phase complete.
+      Telegram (getMe + sendMessage), Windows toasts through winotify when available, and an
+      always-on in-app log at ~/.pulsegstudio/notifications.json. Quiet hours are honoured and
+      delivery failures are recorded, never raised.
+    verified: >
+      api tests cover readiness reporting, log recording, mark-read and the notification
+      endpoint shape; the smoke run shows a needs_review notification landing for a real task.
+    notes:
+      - "Secrets are scrubbed before anything is logged or sent: bot tokens, bearer tokens and key-shaped strings."
+      - "A declined submission cannot be approved by accident - the human must use Override, and the override is recorded on the task."
+
+  - date: "2026-09-11"
+    area: skills
+    summary: >
+      Fixed two false-positive generators in deslop that forced DECLINE verdicts on good work:
+      the load_steps check compared a scene header against every resource in a whole
+      multi-file response, and nothing detected a SubResource() that the scene never defines.
+      Scenes are now checked one block at a time, and undefined sub-resource references are
+      reported with their own high-severity finding.
+    verified: >
+      A demo programmer submission that used to be DECLINED now reaches the human gate with
+      verdict APPROVED (scripts/smoke_api.py, live run). test_skills.py still passes.
+  - date: "2026-09-11"
+    area: providers
+    summary: >
+      Rewrote backend/providers/specs.py as the authoritative 20-provider table with explicit
+      verified / conditional / substituted states, and added require_spec(). Generated
+      project-log/PROVIDER_VERIFICATION.md from that table via scripts/build_provider_report.py
+      so the log cannot drift from the app.
+    verified: >
+      python -c "from backend.providers import specs, base, adapters, router" imports cleanly
+      (20 providers). Re-run after any provider edit.
+    notes:
+      - "Z.ai and Routeway are substituted by OpenRouter (z-ai/glm-4.5-air:free, qwen3-coder:free), not dropped."
+      - "Free-forever set: groq, google_ai_studio, mistral, sealion, openrouter, opencode_zen, ytdlp, stable_horde, pollinations, kenney, telegram, demo."
+      - "One-time credits: deepgram, firecrawl, nvidia_nim - the quota meter labels these as rations."
+
+  - date: "2026-09-11"
+    area: skills
+    summary: >
+      Completed the skills layer: humanizer (rhythm, contractions, voice collapse, on-the-nose
+      emotion), harvard_shape (Burrows' Delta over most-frequent words, Cosine Delta,
+      average-linkage clustering, from Nature s41599-025-05986-3), grillme (the deterministic
+      handoff gate), adhd_filter (20-line progress tail, ## SUMMARY only, budgeted omissions)
+      and design_taste (the D.7 checklist enforced against frontend source).
+    verified: >
+      backend/tests/test_skills.py - 30 tests pass, including the ordering the paper predicts
+      (uniform text scores lower delta cv and a lower normalised merge height than varied text)
+      and WCAG AA contrast on the shipped palette.
+    notes:
+      - "harvard_shape states plainly which numbers come from the paper (the method) and which are heuristics (the thresholds); it refuses to conclude when a corpus is too small."
+      - "The human-author baseline is the human's own planning messages, not a detector's guess."
+
+  - date: "2026-09-11"
+    area: agents
+    summary: >
+      Wrote all twelve agent modules plus the dispatch table: planning_agent (intake state in
+      memory/planning_state.json, confirm_handoff writes ## DESIGN CONFIRMATION), prompter,
+      researcher, transcriptor, documenter, image_generator, audio_curator, programmer, tester,
+      story_writer, task_processor and the auditor runner.
+    verified: >
+      pyflakes clean across backend/agents. The pipeline tests exercise documenter, programmer
+      and tester end to end on the demo provider.
+    notes:
+      - "Agents stamp PULSEG_AGENT: <id> into the user message so demo mode and diagnostics route deterministically instead of guessing from keywords."
+      - "A paused result (paused=True + pause_reason) is the zero-abandonment signal; callers turn it into NEEDS_INTERVENTION."
+
+  - date: "2026-09-11"
+    area: orchestration
+    summary: >
+      Added orchestration/auditor.py, dispatcher.py, approvals.py and context_engine.py. The
+      Auditor runs deterministic skills first and lets the model lower the score but never
+      overrule a high-severity finding; the dispatcher recovers paused tasks, plans with the
+      Prompter, dispatches in parallel under the one-task-per-agent and file-lock rules, and
+      routes every submission through SUBMITTED -> AUDITING -> NEEDS_HUMAN_REVIEW; approvals.py
+      is the only code path that commits.
+    verified: >
+      backend/tests/test_pipeline.py - 11 tests pass, including "no commit exists before the
+      human approves", "approval commits and unblocks dependents", "rejection requires a note
+      and requeues with it", and "two tasks may not hold the same file".
+    notes:
+      - "PULSEG_DEMO=1 appends the demo provider to every capable chain, so demo mode cannot reach the network even when real keys are present."
+      - "human_rejections is a separate counter from decline_count: an Auditor decline rotates the model, a human rejection is feedback."
+
+  - date: "2026-09-11"
+    area: tooling
+    summary: >
+      Bootstrapped the test suite: backend/tests/conftest.py points the studio at a temporary
+      home and projects root for every test, with fixtures for a project, its task bus and its
+      dispatcher.
+    verified: "49 tests pass (router 8, skills 30, pipeline 11)."
+    notes:
+      - "respx intercepts httpx for the provider tests; no test touches the network."
+      - "pyflakes is installed in the venv and the whole backend is clean."
+
+  - date: "2026-09-11"
+    area: documentation
+    summary: >
+      project-log started: PROCESS.md (build order, seven architectural rules, network reality,
+      testing strategy), PROVIDER_VERIFICATION.md (generated), CHANGELOG.yaml, TASKS_TODO.md,
+      UNCERTAIN_CODE.md, SECURITY_REVIEW_NEEDED.md and RESOLUTIONS.md.
+    verified: "PROVIDER_VERIFICATION.md is regenerated by a script, so it is reproducible."
