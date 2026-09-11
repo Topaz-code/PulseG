@@ -7,6 +7,44 @@ updated: "2026-09-11"
 
 entries:
   - date: "2026-09-11"
+    area: desktop
+    summary: >
+      Added the Tauri v2 shell (src-tauri/): window titled PulseG Studio, Python sidecar spawned on
+      launch and killed on every exit path, single-instance guard so a second launch focuses the
+      first window, capability list limited to what the dashboard needs, and an open_path command
+      so the UI can reveal a project folder in Explorer without the API opening windows itself.
+      Packaging: scripts/build_backend.py freezes the backend with PyInstaller into the
+      external-binary name Tauri expects, scripts/make_icons.py draws the PNG/ICO icon set from the
+      palette, and the Windows CI workflow builds the NSIS + MSI installers and
+      smoke-tests the frozen sidecar's /api/health before packaging. docs/PACKAGING.md records what
+      the user gets and what is still unsigned.
+    verified: >
+      Not compiled here: this sandbox has no Rust toolchain, so the shell, the freeze and the
+      installer are written and reviewed but first run in CI. The sidecar entry point the shell
+      starts (python -m backend.main --port) is the same one scripts/smoke_api.py exercises.
+    notes:
+      - "A packaged app whose backend cannot start is worse than no app, so the Windows workflow starts the frozen binary and waits for /api/health before it bundles anything."
+      - "The installer is unsigned; SmartScreen will warn on first run. Recorded rather than hidden - signing needs a certificate the maintainer owns."
+      - "The workflows live in ci/workflows/ rather than .github/workflows/: the GitHub app token that pushed this work has no 'workflows' permission, so GitHub rejects a push that creates those files. scripts/install_ci_workflows.py copies them into place for a token that has it."
+
+  - date: "2026-09-11"
+    area: frontend
+    summary: >
+      Built the dashboard: React 18 + Vite + Tailwind driven entirely by the generated theme, with
+      React Query for server state, one websocket hook for live updates, and nine views - Overview,
+      Task Board, Task drawer, GDD and Story, Assets, Knowledge, Agent detail, Logs and Live
+      Terminal, Git History, Settings - plus the Setup Wizard, the project gate and the command bar
+      with auto chips and @agent routing. Raised the token generator to the full ten-step ramp per
+      colour so the D.7 checklist passes.
+    verified: >
+      npm run typecheck and npm run build both exit 0; scripts/design_audit.py reports 9 of 9
+      screens passing and 6/6 contrast pairs with zero theme findings; the dev server ran against a
+      live backend on 127.0.0.1:8787 and every endpoint the views read answered 200.
+    notes:
+      - "GET /api/tasks/statuses was registered after /api/tasks/{task_id} and therefore always 404ed; a regression test now walks the route table and fails on any literal route declared after a parameterised one."
+      - "PUT /api/projects/{id}/file is the one human write path to a document: scoped to the project, text only, refused while an in-flight task claims the same file, and never committed."
+
+  - date: "2026-09-11"
     area: api
     summary: >
       Built the whole HTTP + WebSocket surface: backend/api/{deps,schemas,ws}.py, thirteen

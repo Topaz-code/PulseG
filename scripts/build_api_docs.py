@@ -12,6 +12,8 @@ routes per prefix so an accidental duplicate or a shadowed route shows up in rev
 """
 from __future__ import annotations
 
+import argparse
+
 import sys
 from collections import Counter
 from pathlib import Path
@@ -76,6 +78,14 @@ def describe_schema(schema: dict, components: dict) -> str:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="do not write; exit non-zero when docs/API.md is out of date",
+    )
+    args = parser.parse_args()
+
     from backend.main import create_app
 
     app = create_app()
@@ -142,10 +152,21 @@ def main() -> int:
                 lines.append(f"- params: {described}")
             lines.append("")
 
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-
+    rendered = "\n".join(lines).rstrip() + "\n"
     counts = Counter(section_for(path) for path in paths)
+
+    if args.check:
+        # Used by CI: a route added without regenerating the docs fails the build, which is the
+        # only way the API reference stays worth reading.
+        current = OUT.read_text(encoding="utf-8") if OUT.exists() else ""
+        if current != rendered:
+            print(f"{OUT.relative_to(REPO_ROOT)} is out of date - run scripts/build_api_docs.py")
+            return 1
+        print(f"{OUT.relative_to(REPO_ROOT)} is up to date - {sum(counts.values())} paths")
+        return 0
+
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text(rendered, encoding="utf-8")
     print(f"Wrote {OUT.relative_to(REPO_ROOT)} - {sum(counts.values())} paths")
     for section, count in sorted(counts.items()):
         print(f"  {section}: {count}")

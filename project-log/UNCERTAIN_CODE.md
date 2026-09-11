@@ -16,9 +16,17 @@ on a Windows machine.
 cannot be installed here, and the Tauri build cannot be run. `webkit2gtk-4.1` and `pkg-config`
 are also absent, so even a Linux bundle cannot be produced.
 
-**What is in place instead.** Complete Tauri v2 configuration, the NSIS/WiX installer settings,
-the sidecar wiring and a Windows CI workflow, so the installer is a build away for anyone with
-the toolchain. The React app is validated by `tsc` and Vite, and the Python by pytest.
+**What is in place instead.** The shell is written in full - `src-tauri/src/main.rs` (window,
+sidecar start/stop, single instance, `open_path`, `backend_status`), `tauri.conf.json` (NSIS + MSI,
+external binary, icon set), `capabilities/default.json` - plus three build pieces: the icon
+generator (`scripts/make_icons.py`, which has been run), the sidecar freeze
+(`scripts/build_backend.py`, written and pyflakes-clean), and the Windows CI workflow, which
+starts the frozen binary and waits for `/api/health` before it packages anything. So the installer
+is a build away for anyone with the toolchain, but it has not been built or launched here.
+
+Unverified as a direct result: the frozen sidecar's first start on Windows, the shell's ability to
+kill it on every exit path, and the Windows toast path (`winotify`, which only installs on win32).
+The React app is validated by `tsc` and Vite, and the Python by pytest.
 
 **What would settle it.** Running the CI workflow on a Windows runner, or `npm run tauri build`
 on a Windows machine.
