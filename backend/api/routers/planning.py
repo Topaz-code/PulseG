@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 
 from ...agents import planning_agent
 from ...core.events import bus
-from ...orchestration import memory
+from ...orchestration import memory, projects
 from ...runtime import runtime
 from ...skills import grillme
 from ..deps import guarded, require_project
@@ -90,6 +90,15 @@ def gate() -> dict[str, Any]:
     """The single source of truth for whether the build may start."""
     context = require_project()
     status = planning_agent.handoff_status(context.path)
+    if projects.reconciliation_blocks_new_work(context.record):
+        status = {
+            **status,
+            "allowed": False,
+            "blockers": [
+                *status.get("blockers", []),
+                "the project you connected has not been reconciled yet - approve that task first",
+            ],
+        }
     return {
         **status,
         "checklist": grillme.blockers_markdown(status["blockers"]),
@@ -128,6 +137,19 @@ def handoff() -> dict[str, Any]:
 def confirm(payload: IntakeConfirmRequest) -> dict[str, Any]:
     """Explicit confirmation. This is the moment ``gdd.md`` becomes final and Phase 0 starts."""
     context = require_project()
+    if projects.reconciliation_blocks_new_work(context.record):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "reconciliation_pending",
+                "message": (
+                    "PulseG Studio is still reading the project you connected. Approve the "
+                    "reconciliation task on the Task Board first, so the team builds on what "
+                    "already exists instead of guessing."
+                ),
+                "action": "open_board",
+            },
+        )
     result = planning_agent.confirm_handoff(context.path, confirmed_text=payload.confirmed_text)
     if not result.get("finalised"):
         raise HTTPException(
@@ -169,6 +191,18 @@ def seed_tasks() -> dict[str, Any]:
     """Create the Phase 1 task set. Only allowed after the design is confirmed."""
     context = require_project()
     state = planning_agent.read_state(context.path)
+    if projects.reconciliation_blocks_new_work(context.record):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "reconciliation_pending",
+                "message": (
+                    "An existing project must be reconciled into the design document before new "
+                    "build tasks are queued. Approve the reconciliation task on the Task Board."
+                ),
+                "action": "open_board",
+            },
+        )
     if not state.get("handoff_confirmed"):
         raise HTTPException(
             status_code=409,

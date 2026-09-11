@@ -600,3 +600,64 @@ def test_a_human_can_edit_a_document_and_the_bus_rules_still_apply(client):
         json={"path": "assets/hero.png", "content": "not really a png"},
     )
     assert binary.status_code == 422
+
+
+def test_connecting_an_existing_project_queues_reconciliation_before_any_new_work(client, tmp_path):
+    """Connecting a project is a promise: read what is there before writing anything.
+
+    The studio adopts the folder, queues exactly one reconciliation task, and refuses to start
+    the build or seed new tasks until the human approves it. Adopting the same folder twice must
+    not queue the work twice.
+    """
+    folder = tmp_path / "their-game"
+    (folder / "godot_project").mkdir(parents=True)
+    (folder / "godot_project" / "project.godot").write_text(
+        'config_version=5\n\n[application]\n\nconfig/name="Their Game"\n'
+        'config/features=PackedStringArray("4.3", "GL Compatibility")\n',
+        encoding="utf-8",
+    )
+    (folder / "godot_project" / "player.gd").write_text("extends CharacterBody2D\n", encoding="utf-8")
+
+    created = client.post(
+        "/api/projects",
+        json={"name": "Their Game", "mode": "existing", "existing_path": str(folder)},
+    )
+    assert created.status_code == 200, created.text
+    record = created.json()["project"]
+    assert record["mode"] == "existing"
+    assert record.get("reconciliation_task_id")
+
+    # The scan is on disk, so the Documenter's task has something real to read.
+    scan = folder / "reports" / "existing_project_scan.md"
+    assert scan.exists()
+    assert "player.gd" in scan.read_text(encoding="utf-8")
+
+    board = client.get("/api/tasks/board").json()
+    reconciliation = [
+        task
+        for lane in board["lanes"]
+        for task in lane["tasks"]
+        if task["title"] == "Reconcile the existing project into the GDD"
+    ]
+    assert len(reconciliation) == 1
+    assert reconciliation[0]["assigned_to"] == "documenter"
+    assert reconciliation[0]["status"] == "PENDING"
+
+    # The gate says no, in words a person can act on, and so does the endpoint that queues work.
+    gate = client.get("/api/planning/gate").json()
+    assert gate["allowed"] is False
+    assert any("reconciled" in blocker for blocker in gate["blockers"])
+
+    seeded = client.post("/api/planning/seed-tasks")
+    assert seeded.status_code == 409
+    assert seeded.json()["error"] == "reconciliation_pending"
+
+    # Adopting again finds the same task rather than queueing a second one.
+    again = client.post(
+        "/api/projects",
+        json={"name": "Their Game again", "mode": "existing", "existing_path": str(folder)},
+    )
+    assert again.status_code == 200
+    board = client.get("/api/tasks/board").json()
+    titles = [task["title"] for lane in board["lanes"] for task in lane["tasks"]]
+    assert titles.count("Reconcile the existing project into the GDD") == 1

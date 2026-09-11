@@ -18,7 +18,7 @@ from ..core.atomic import atomic_write_json, atomic_write_text, read_json, read_
 from ..core.config import load_config, load_projects_index, new_id, save_config, save_projects_index
 from ..core.events import bus
 from ..core.index import index
-from ..core.models import AssetRequest, ProjectRecord, Status
+from ..core.models import AssetRequest, ProjectRecord, Status, Task
 from . import memory
 from .git_ops import GitRepo, git_available
 from .task_bus import TaskBus
@@ -202,6 +202,13 @@ def create_project(
             record["git_initialised"] = False
 
     record["godot_project_path"] = str(project_dir / "godot_project")
+    if record["mode"] == "existing":
+        # Queued before the index write so the very first screen the human sees already knows
+        # that an existing project is waiting to be reconciled rather than built on.
+        reconciliation = queue_reconciliation_task(record)
+        if reconciliation is not None:
+            record["reconciliation_task_id"] = reconciliation["task_id"]
+
     index_data = load_projects_index()
     index_data.setdefault("projects", []).append(record)
     index_data["active_project_id"] = record["project_id"]
@@ -285,17 +292,52 @@ def _adopt_existing(project_dir: Path, record: dict[str, Any]) -> None:
     )
 
 
-def queue_reconciliation_task(record: dict[str, Any]) -> dict[str, Any] | None:
-    """After adopting an existing project, ask the Documenter to reconcile it into the GDD."""
+RECONCILIATION_TITLE = "Reconcile the existing project into the GDD"
+
+
+def find_reconciliation_task(record: dict[str, Any]) -> Task | None:
+    """The reconciliation task for an adopted project, if one has been queued."""
     task_bus = bus_for(record)
     if task_bus is None:
         return None
+    for task in task_bus.all():
+        if task.title == RECONCILIATION_TITLE:
+            return task
+    return None
+
+
+def reconciliation_blocks_new_work(record: dict[str, Any]) -> bool:
+    """True while an adopted project's reconciliation has not been approved.
+
+    Connecting an existing project is a promise: the studio reads what is there before it writes
+    anything. This is the check that keeps it.
+    """
+    if str(record.get("mode", "fresh")) != "existing":
+        return False
+    task = find_reconciliation_task(record)
+    # No task yet (the scan found nothing to reconcile) or an approved one: the gate is open.
+    return task is not None and task.status is not Status.APPROVED
+
+
+def queue_reconciliation_task(record: dict[str, Any]) -> dict[str, Any] | None:
+    """After adopting an existing project, ask the Documenter to reconcile it into the GDD.
+
+    Idempotent: adopting the same folder twice must not queue the same work twice, or the
+    Documenter would rewrite the summary while the first attempt is still waiting for review.
+    """
+    task_bus = bus_for(record)
+    if task_bus is None:
+        return None
+    existing = find_reconciliation_task(record)
+    if existing is not None:
+        return existing.model_dump(mode="json")
+
     task = task_bus.create(
         assigned_to="documenter",
         created_by="system",
         phase=0,
         kind="research",
-        title="Reconcile the existing project into the GDD",
+        title=RECONCILIATION_TITLE,
         instruction=(
             "Read reports/existing_project_scan.md and the existing scenes and scripts under "
             "godot_project/. Write a faithful `## SUMMARY` for memory/gdd.md describing what "
@@ -307,8 +349,6 @@ def queue_reconciliation_task(record: dict[str, Any]) -> dict[str, Any] | None:
         file_claims=["memory/gdd.md", "reports/existing_project_reconciliation.md"],
         priority=10,
     )
-    if task_bus.get(task.task_id):
-        task_bus.transition(task.task_id, Status.IN_PROGRESS) if False else None
     return task.model_dump(mode="json")
 
 

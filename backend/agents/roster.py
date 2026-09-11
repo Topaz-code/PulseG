@@ -13,8 +13,11 @@ from __future__ import annotations
 
 from typing import Any
 
-# Provider ids must match backend/providers/specs.py (or providers.yaml).
-from ..providers.specs import PROJECT_DEFAULT_MODELS as M
+# Provider ids must match backend/providers/specs.py (or providers.yaml). Model ids below are
+# written out rather than imported from specs.PROJECT_DEFAULT_MODELS: this file is the seed for the
+# user's own agents.yaml, and a literal is what the user sees and edits there. The two are checked
+# against each other by scripts/build_provider_report.py, which fails when a chain names a provider
+# that does not exist.
 
 # --- shared prompt fragments ----------------------------------------------------------
 
@@ -763,5 +766,4 @@ __all__ = [
     "default_model_map",
     "CONTEXT_RULES",
     "OUTPUT_CONTRACT_JSON",
-    "M",
 ]
