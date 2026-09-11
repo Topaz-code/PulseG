@@ -6,6 +6,8 @@ the wrong shape, a guard that is not actually wired, an error that leaks a trace
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -710,3 +712,79 @@ def test_approval_commits_even_when_the_machine_has_no_git_identity(client, tmp_
 
     # And the user's own configuration was not touched.
     assert repo.identity()["name"] == ""
+
+
+def test_the_media_and_web_export_mounts_serve_what_the_dashboard_asks_for(client):
+    """The two places the UI loads bytes from, rather than JSON.
+
+    The Asset Library shows sprites and plays audio from /media, and the Live Preview iframe loads
+    the Godot Web export from /preview/<project>/. Both are plain static mounts, which is exactly
+    why they are easy to break without noticing: an API test suite that only speaks JSON would
+    never see it.
+    """
+    project = client.post("/api/projects", json={"name": "Media", "mode": "fresh"}).json()["project"]
+    root = Path(project["path"])
+
+    sprite = root / "assets" / "sprites" / "hero.png"
+    sprite.parent.mkdir(parents=True, exist_ok=True)
+    sprite.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * 32)
+
+    listing = client.get("/api/assets").json()
+    listed = [asset for asset in listing["assets"] if asset["path"] == "assets/sprites/hero.png"]
+    assert listed, listing["assets"]
+    assert listed[0]["url"] == "/media/assets/sprites/hero.png"
+    served = client.get(listed[0]["url"])
+    assert served.status_code == 200
+    assert served.content.startswith(b"\x89PNG")
+
+    # A web build that the preview screen can point an iframe at.
+    export = root / "web_build"
+    export.mkdir(parents=True, exist_ok=True)
+    (export / "index.html").write_text("<html><body>export</body></html>", encoding="utf-8")
+    state = client.get("/api/preview/state").json()
+    assert state["mode"] == "game"
+    assert state["game"]["available"] is True
+    assert client.get(state["game"]["url"]).status_code == 200
+
+    # Neither mount can be walked out of. The traversal has to be percent-encoded, otherwise the
+    # HTTP client normalises it away before the request is ever made and the SPA fallback answers.
+    escape = client.get("/media/%2e%2e/%2e%2e/backend/main.py")
+    assert escape.status_code in {403, 404}, escape.text
+    assert b"create_app" not in escape.content
+
+    outside = client.get(f"/preview/{project['project_id']}/%2e%2e/%2e%2e/backend/main.py")
+    assert outside.status_code in {403, 404}, outside.text
+    assert b"create_app" not in outside.content
+
+
+def test_a_human_can_send_work_directly_to_one_agent(client):
+    """@agent routing: the Task Detail and Command Bar path that skips the Prompter.
+
+    The task is created by the human (created_by=human_direct) and assigned straight to an agent,
+    but it is not special afterwards: it still has to pass the Auditor and still waits for the
+    human. This test pins both halves of that - it lands, and it does not arrive approved.
+    """
+    project = client.post("/api/projects", json={"name": "Direct", "mode": "fresh"}).json()["project"]
+    root = Path(project["path"])
+    sprite = root / "assets" / "hero.png"
+    sprite.parent.mkdir(parents=True, exist_ok=True)
+    sprite.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    made = client.post(
+        "/api/assets/regenerate",
+        json={"asset_path": "assets/hero.png", "agent": "image_generator", "reason": "too dark"},
+    )
+    assert made.status_code == 200, made.text
+    task = made.json()["task"]
+    assert task["created_by"] == "human_direct"
+    assert task["assigned_to"] == "image_generator"
+    assert task["status"] == "PENDING"
+    assert task["expected_outputs"] == ["assets/hero.png"]
+
+    # Regenerating something that does not exist is a clear refusal, not a queued work item.
+    missing = client.post(
+        "/api/assets/regenerate",
+        json={"asset_path": "assets/never-made.png", "agent": "image_generator", "reason": ""},
+    )
+    assert missing.status_code == 404
+    assert missing.json()["error"] == "asset_missing"
