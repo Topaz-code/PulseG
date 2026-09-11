@@ -412,12 +412,24 @@ export type GitCommit = {
   task_id?: string;
 };
 
+/**
+ * One row of the asset library, as `/api/assets` sends it.
+ *
+ * `name`, `bytes` and `modified` are filled in by the API from the file on disk - `library.json`
+ * only records where an asset came from. `kind` is the backend's own suffix classification
+ * (sprite / background / tile / ui / sfx / bgm / reference), and `audio` is the API saying whether
+ * a browser can play it. `exists` is false when the file has gone missing.
+ */
 export type AssetRow = {
   name: string;
   path: string;
   kind: string;
   bytes: number;
+  size_bytes?: number;
   modified: string;
+  original?: string;
+  audio?: boolean;
+  exists?: boolean;
   url?: string;
   tags?: string[];
   used_by?: string[];

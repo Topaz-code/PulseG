@@ -757,6 +757,48 @@ def test_the_media_and_web_export_mounts_serve_what_the_dashboard_asks_for(clien
     assert b"create_app" not in outside.content
 
 
+def test_every_asset_row_carries_what_the_gallery_shows(client):
+    """The Asset Library cards need a name, a size and a date, and the library index has none of them.
+
+    `assets/library.json` records where a file came from. The gallery labels each card with the file
+    name, prints its size and dates it, so the API fills those in from the file on disk. A row that
+    reported zero bytes for a real sprite would be the kind of bug that only shows up on screen, so
+    it is asserted here.
+    """
+    project = client.post("/api/projects", json={"name": "Gallery", "mode": "fresh"}).json()["project"]
+    root = Path(project["path"])
+
+    sprite = root / "assets" / "sprites" / "hero.png"
+    sprite.parent.mkdir(parents=True, exist_ok=True)
+    sprite.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * 100)
+
+    row = next(
+        asset for asset in client.get("/api/assets").json()["assets"] if asset["path"] == "assets/sprites/hero.png"
+    )
+    assert row["name"] == "hero.png"
+    assert row["bytes"] == len(sprite.read_bytes())
+    assert row["size_bytes"] == row["bytes"]
+    assert row["modified"].startswith("20"), row["modified"]
+    assert row["exists"] is True
+    assert row["audio"] is False
+    # The kind is the backend's own suffix classification, which is the word the gallery's filter
+    # chips are built from - a .png is a sprite here, not an "image".
+    assert row["kind"] == "sprite"
+
+    # A reference whose file has gone is still listed - a broken pointer is worth seeing - but it
+    # is reported honestly rather than crashing the listing or claiming a size.
+    (root / "assets" / "library.json").write_text(
+        '[{"path": "assets/sprites/lost.png", "kind": "image", "original": "user"}]', encoding="utf-8"
+    )
+    listing = client.get("/api/assets").json()
+    lost = next(asset for asset in listing["assets"] if asset["path"] == "assets/sprites/lost.png")
+    assert lost["exists"] is False
+    assert lost["bytes"] == 0
+    assert lost["modified"] == ""
+    assert listing["total_bytes"] == row["bytes"]
+    assert listing["categories"] == {"sprite": 1, "image": 1}
+
+
 def test_a_human_can_send_work_directly_to_one_agent(client):
     """@agent routing: the Task Detail and Command Bar path that skips the Prompter.
 

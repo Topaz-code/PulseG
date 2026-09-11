@@ -85,3 +85,26 @@ easy option and the wrong one.
 **Resolution.** The files, always. The index is rebuildable cache; `Index.rebuild()` regenerates
 it from `memory/` and the project folder. No code path may write a fact only to SQLite. This is
 what makes the project folder portable and the app recoverable after a crash.
+
+## The asset library speaks the API's vocabulary, not a guessed one
+
+**Question.** The Asset Library's filter chips said "image", "audio", "font" - none of which is a
+word the backend ever emits. The backend classifies a file by its suffix (`sprite`, `background`,
+`tile`, `ui`, `sfx`, `bgm`, `reference`), so every real sprite was filtered out of the gallery, and
+the sound section - which tested `kind === "audio"` - could never contain anything.
+
+**Resolution.** The screen now uses the API's own kind list and the `audio` flag the API sends.
+The rows also gained `name`, `bytes` and `modified`, derived in `list_assets` from the file on disk,
+because `library.json` records provenance only and a gallery card needs a label, a size and a date.
+The alternative - teaching the React component to patch up a thin API response - would have put the
+same missing fields in every future consumer of the endpoint. A file that has gone missing is still
+listed with zero bytes and an empty date (`exists: false`): a broken pointer is worth seeing.
+
+## A provider without usage data must not crash the Overview
+
+**Question.** `provider.usage.in_cooldown` assumed every provider row carries a usage block. When
+one did not, the first screen of the app threw instead of rendering.
+
+**Resolution.** Optional chaining, and the frontend tests now render the screen with a row that has
+no `usage` at all. The real API always sends one, but the dashboard's most-visited screen should not
+depend on that being true for every provider forever.

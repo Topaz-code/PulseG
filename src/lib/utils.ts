@@ -69,6 +69,16 @@ export function humanise(value: string | undefined | null): string {
 }
 
 /** A file name from a project-relative path, for screenshot and artifact lists. */
+/**
+ * "1 file" / "2 files" - a count next to its noun.
+ *
+ * The dashboard is read by people who are not programmers, and "1 files" reads like a bug even
+ * when the number is right. `plural(0, "task")` is "0 tasks", which is what English wants.
+ */
+export function plural(count: number, noun: string, suffix = "s"): string {
+  return `${count} ${noun}${count === 1 ? "" : suffix}`;
+}
+
 export function baseName(path: string): string {
   const parts = path.split("/");
   return parts[parts.length - 1] || path;

@@ -7,6 +7,28 @@ updated: "2026-09-11"
 
 entries:
   - date: "2026-09-11"
+    area: frontend
+    summary: >
+      Added a frontend test harness (vitest + jsdom + Testing Library) that renders all nine views
+      against a fixture layer built from real API responses. It immediately found three defects the
+      type checker could not: the Overview screen crashed when a provider row had no usage block,
+      the Asset Library filtered by a kind vocabulary the API never emits ("image"/"audio" instead
+      of the backend's sprite/background/tile/ui/sfx/bgm/reference) so every real asset was filtered
+      out and sound was never split into its own section, and asset rows had no name, size or date
+      because library.json only records provenance. The API now fills those three fields in from the
+      file on disk, the screen uses the API's own kinds and audio flag, and counts read "1 file"
+      rather than "1 files".
+    verified: >
+      npm test - 9 view tests pass. python -m pytest backend/tests -q - 88 tests pass, including a
+      new one asserting every asset row carries name/bytes/modified/exists and that a missing file
+      is reported as zero bytes instead of crashing the listing. Type check, production build,
+      pyflakes, build_api_docs --check and verify_pipeline.py were re-run after the change.
+    notes:
+      - "The fixture layer throws on an unmapped endpoint, so a view that starts calling a new URL fails loudly instead of rendering an empty state that a test would happily pass."
+      - "vitest.config.ts is separate from vite.config.ts: test-only keys must not reach the shipping config."
+      - "The check runs in ci/workflows/checks.yml before the bundle is built."
+
+  - date: "2026-09-11"
     area: orchestration
     summary: >
       Fixed two defects that only show up when the studio is actually left running. First, the

@@ -25,6 +25,9 @@ backend/dist/
 # --- Tauri / Rust ---
 src-tauri/target/
 src-tauri/gen/
+# The frozen Python sidecar that scripts/build_backend.py produces before `tauri build`. It is a
+# build output - the workflow rebuilds it - and it is large, so it is not committed.
+src-tauri/binaries/
 
 # --- Secrets & local runtime state (NEVER commit) ---
 keys.enc

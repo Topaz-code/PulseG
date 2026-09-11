@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import { formatBytes, humanise, relativeTime } from "@/lib/utils";
+import { baseName, formatBytes, humanise, plural, relativeTime } from "@/lib/utils";
 import { useAssetActions, useAssets, useIngestAsset, useStyleLock } from "@/lib/queries";
+import type { AssetRow } from "@/lib/types";
 import { useStudio } from "@/lib/store";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,29 @@ import { IconAlert, IconImages, IconPlus, IconRefresh, IconSparkle } from "@/com
  * Asking for a change here never edits a file directly: it creates a task, which then goes through
  * the Auditor and the human gate like everything else.
  */
-const CATEGORIES = ["all", "image", "audio", "font", "tilemap", "model", "data"] as const;
+/**
+ * The kind vocabulary of the API, not a guess at it.
+ *
+ * `backend/orchestration/projects.py` classifies a file by its suffix when it is ingested or
+ * scanned - .png is a sprite, .ogg is sfx, .md is a reference - and the library stores that word. A
+ * chip list saying "image" and "audio" would filter every real asset out of the gallery, so these
+ * are the same words the backend uses. "All" stays first.
+ */
+const CATEGORIES = [
+  "all",
+  "sprite",
+  "background",
+  "tile",
+  "ui",
+  "sfx",
+  "bgm",
+  "reference",
+] as const;
+
+/** The name shown on a card. The API sends one; a path is always there to fall back on. */
+function assetName(asset: AssetRow): string {
+  return asset.name || baseName(asset.path);
+}
 
 type AssetRequestRow = {
   request_id: string;
@@ -54,12 +77,14 @@ export function Assets() {
     return assets.filter((asset) => {
       if (category !== "all" && asset.kind !== category) return false;
       if (!needle) return true;
-      return asset.name.toLowerCase().includes(needle) || asset.path.toLowerCase().includes(needle);
+      return assetName(asset).toLowerCase().includes(needle) || asset.path.toLowerCase().includes(needle);
     });
   }, [assets, category, query]);
 
-  const audio = visible.filter((asset) => asset.kind === "audio");
-  const images = visible.filter((asset) => asset.kind !== "audio");
+  // The API decides what can be played in a player (it knows the audio suffixes); the screen only
+  // decides what to do with that answer.
+  const sound = visible.filter((asset) => asset.audio);
+  const images = visible.filter((asset) => !asset.audio);
   const openRequests = requests.filter((row) => row.status === "open");
 
   const report = (title: string, body: string, tone: "info" | "success" | "danger" = "success") =>
@@ -82,7 +107,8 @@ export function Assets() {
         <div>
           <h1 className="text-lg font-semibold text-mint-100">Assets</h1>
           <p className="text-xs text-muted">
-            {assets.length} files, {formatBytes(data?.total_bytes ?? 0)} - the team checks here before generating
+            {plural(assets.length, "file")}, {formatBytes(data?.total_bytes ?? 0)} - the team checks here
+            before generating
             anything new
           </p>
         </div>
@@ -220,18 +246,18 @@ export function Assets() {
                       type="button"
                       onClick={() => setPreview(asset.path)}
                       className="block w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                      aria-label={`Preview ${asset.name}`}
+                      aria-label={`Preview ${assetName(asset)}`}
                     >
                       <img
                         src={asset.url ?? `/media/${asset.path}`}
-                        alt={asset.name}
+                        alt={assetName(asset)}
                         loading="lazy"
                         className="h-36 w-full bg-charcoal-800 object-contain"
                       />
                     </button>
                     <div className="px-3 py-2">
-                      <p className="truncate text-sm text-mint-100" title={asset.name}>
-                        {asset.name}
+                      <p className="truncate text-sm text-mint-100" title={assetName(asset)}>
+                        {assetName(asset)}
                       </p>
                       <p className="mt-1 text-[11px] text-muted">
                         {humanise(asset.kind)} - {formatBytes(asset.bytes)} - {relativeTime(asset.modified)}
@@ -252,17 +278,17 @@ export function Assets() {
               {images.length === 0 ? <p className="text-sm text-muted">No artwork matches that filter.</p> : null}
             </section>
 
-            {audio.length > 0 ? (
+            {sound.length > 0 ? (
               <section className="mt-8">
-                <h2 className="mb-3 text-xs uppercase tracking-wide text-muted">Sound ({audio.length})</h2>
+                <h2 className="mb-3 text-xs uppercase tracking-wide text-muted">Sound ({sound.length})</h2>
                 <div className="space-y-2">
-                  {audio.map((asset) => (
+                  {sound.map((asset) => (
                     <div
                       key={asset.path}
                       className="flex flex-wrap items-center gap-3 rounded-md border border-app-border bg-app-surface px-4 py-3"
                     >
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm text-mint-100">{asset.name}</span>
+                        <span className="block truncate text-sm text-mint-100">{assetName(asset)}</span>
                         <span className="text-[11px] text-muted">
                           {formatBytes(asset.bytes)} - {relativeTime(asset.modified)}
                         </span>

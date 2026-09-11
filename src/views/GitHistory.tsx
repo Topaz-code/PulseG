@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { cn, humanise, relativeTime } from "@/lib/utils";
+import { cn, humanise, plural, relativeTime } from "@/lib/utils";
 import { revealProjectFolder } from "@/lib/desktop";
 import { useActiveProject } from "@/lib/queries";
 import { useStudio } from "@/lib/store";
@@ -40,7 +40,7 @@ export function GitHistory() {
             History
           </h1>
           <p className="text-xs text-muted">
-            {commits.length} saved points
+            {plural(commits.length, "saved point")}
             {branches?.current ? ` on ${branches.current}` : ""}
             {taskCommits?.count ? ` - ${taskCommits.count} tied to approved tasks` : ""}
           </p>

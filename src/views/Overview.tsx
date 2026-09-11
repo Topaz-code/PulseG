@@ -272,7 +272,7 @@ export function Overview() {
                     .slice(0, 5)
                     .map((provider) => <QuotaMeter key={provider.id} provider={provider} compact />)
                 )}
-                {providers?.providers.some((provider) => provider.usage.in_cooldown) ? (
+                {providers?.providers.some((provider) => provider.usage?.in_cooldown) ? (
                   <p className="flex items-start gap-2 text-xs text-canary-200">
                     <IconAlert size={14} className="mt-1 shrink-0" />
                     One provider is cooling down after a rate limit. The team falls back to the next one in the chain

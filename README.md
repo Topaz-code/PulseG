@@ -86,6 +86,7 @@ python scripts/build_api_docs.py --check
 python scripts/design_audit.py --check
 python scripts/verify_pipeline.py       # the studio end to end, in demo mode
 npm run typecheck && npm run build
+npm test                                # the nine views, rendered against a fake API
 ```
 
 `PULSEG_DEMO=1` runs the entire pipeline - dispatch, audit, approval, git commit - with no keys and

@@ -11,12 +11,14 @@ of what exists. Two behaviours worth knowing about:
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
 from ...core.events import bus
+from ...core.models import iso
 from ...mcp.filesystem_mcp import write_project_file
 from ...orchestration import memory, projects
 from ...runtime import runtime
@@ -44,14 +46,44 @@ def list_assets(kind: str = Query(default=""), query: str = Query(default="")) -
     categories: dict[str, int] = {}
     for entry in library:
         categories[str(entry.get("kind", "other"))] = categories.get(str(entry.get("kind", "other")), 0) + 1
+    rows = [_asset_row(context.path, entry) for entry in library]
     return {
-        "assets": [
-            {**entry, "url": f"/media/{entry.get('path')}", "audio": Path(str(entry.get("path", ""))).suffix.lower() in AUDIO_SUFFIXES}
-            for entry in library
-        ],
+        "assets": rows,
         "categories": categories,
-        "total_bytes": sum(int(entry.get("size_bytes", 0) or 0) for entry in library),
+        "total_bytes": sum(int(row.get("bytes", 0) or 0) for row in rows),
         "requests": projects.asset_requests(context.record),
+    }
+
+
+def _asset_row(project_dir: Path, entry: dict[str, Any]) -> dict[str, Any]:
+    """One library entry, with the three fields the dashboard reads filled in from the file itself.
+
+    `library.json` records where an asset came from, not how big it is or when it changed, and the
+    gallery needs all three: the name to label the card, the size to show under it and the mtime to
+    sort and date it. Deriving them here - rather than teaching the UI to guess - keeps the API the
+    single place that knows what an asset row looks like. A missing file is reported as zero bytes
+    with an empty timestamp instead of disappearing, because a broken reference is worth seeing.
+    """
+    relative = str(entry.get("path", ""))
+    path = project_dir / relative
+    size = 0
+    modified = ""
+    try:
+        stat = path.stat()
+    except OSError:
+        stat = None
+    if stat is not None:
+        size = int(stat.st_size)
+        modified = iso(datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc))
+    return {
+        **entry,
+        "name": Path(relative).name,
+        "bytes": size,
+        "size_bytes": size,
+        "modified": modified,
+        "url": f"/media/{relative}",
+        "audio": Path(relative).suffix.lower() in AUDIO_SUFFIXES,
+        "exists": stat is not None,
     }
 
 
