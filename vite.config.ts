@@ -24,8 +24,12 @@ export default defineConfig({
   clearScreen: false,
   server: {
     port: 1420,
-    // 0.0.0.0 so the sandbox preview and the Tauri webview can both reach the dev server.
+    // 0.0.0.0 so the sandbox preview and the Tauri webview can both reach the dev server, and
+    // allowedHosts open because the hosted preview reaches it through a proxied hostname. In the
+    // packaged app this server does not exist at all - the sidecar serves dist/ - so this cannot
+    // loosen anything a user depends on.
     host: "0.0.0.0",
+    allowedHosts: true,
     strictPort: true,
     proxy: {
       "/api": { target: BACKEND, changeOrigin: true },

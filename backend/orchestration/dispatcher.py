@@ -214,12 +214,20 @@ class Dispatcher:
             run = AgentRunResult(ok=True, agent_id="prompter", payload=payload)
 
         created: list[str] = []
+        duplicates: list[str] = []
         if create_tasks:
             for spec in payload.get("create_tasks") or []:
                 if not isinstance(spec, dict) or not spec.get("instruction"):
                     continue
                 assigned = str(spec.get("assigned_to") or registry.agent_for_task_kind(str(spec.get("kind", ""))))
                 if registry.get(assigned) is None:
+                    continue
+                repeated = self._duplicate_reason(spec, assigned)
+                if repeated:
+                    # Leaving this out is the difference between a queue and a flood: a Prompter
+                    # that keeps proposing the same work - which a run of a deterministic model
+                    # does on every tick - would otherwise bury the human in identical copies.
+                    duplicates.append(repeated)
                     continue
                 task = self.bus.create(
                     assigned_to=assigned,
@@ -236,9 +244,52 @@ class Dispatcher:
                 )
                 created.append(task.task_id)
         reasoning = str(payload.get("reasoning") or "")[:600]
+        if duplicates:
+            reasoning = (
+                reasoning + f" Skipped {len(duplicates)} already-queued task(s): "
+                + "; ".join(duplicates[:3])
+            ).strip()
         if run.problems:
             reasoning = (reasoning + " " + run.problems[0][:200]).strip()
         return created, reasoning
+
+    @staticmethod
+    def _close(status: Status) -> bool:
+        """Statuses that mean the work is finished, so the same work may be proposed again."""
+        return status in {Status.APPROVED, Status.REJECTED}
+
+    def _duplicate_reason(self, spec: dict[str, Any], assigned: str) -> str:
+        """Why this proposed task is work the queue already holds, or an empty string.
+
+        Three ways two tasks are the same task: the same agent with the same title, the same
+        agent with any of the same expected outputs, or any two tasks claiming the same file
+        while one of them is still open. Titles and outputs are compared case-insensitively
+        after squeezing whitespace, because a model rephrasing "Implement  player movement"
+        as "implement player movement" is still proposing the same work.
+        """
+
+        def normalise(values: Any) -> set[str]:
+            if not isinstance(values, (list, tuple)):
+                return set()
+            return {" ".join(str(item).split()).lower() for item in values if str(item).strip()}
+
+        title = " ".join(str(spec.get("title") or "").split()).lower()
+        claims = normalise(spec.get("file_claims"))
+        outputs = normalise(spec.get("expected_outputs"))
+
+        for task in self.bus.all():
+            if self._close(task.status):
+                continue
+            existing_title = " ".join((task.title or "").split()).lower()
+            if title and existing_title and title == existing_title:
+                return f"{task.task_id} already covers '{task.title}'"
+            if assigned == task.assigned_to and outputs and outputs & normalise(task.expected_outputs):
+                shared = sorted(outputs & normalise(task.expected_outputs))[0]
+                return f"{task.task_id} already produces {shared}"
+            shared_files = claims & normalise(task.file_claims)
+            if shared_files:
+                return f"{task.task_id} already claims {sorted(shared_files)[0]}"
+        return ""
 
     def _state_brief(self) -> dict[str, Any]:
         return {

@@ -197,3 +197,50 @@ def _has_commits(path) -> bool:
     if result.returncode != 0:
         return False
     return int((result.stdout or "0").strip() or 0) > 0
+
+
+def test_the_prompter_cannot_flood_the_queue_with_the_same_task(dispatcher, monkeypatch):
+    """A model that repeats itself must not turn into an endless queue of identical work.
+
+    The demo provider - and any run of a model stuck on one idea - proposes the same task on
+    every tick. Before this guard, that produced dozens of copies per minute, all of them
+    landing in the human's review queue: exactly the "unlimited work to look at" failure this
+    product cannot have. The second tick must create nothing and say why.
+    """
+    from backend.agents import prompter as prompter_agent
+    from backend.agents.base import AgentRunResult
+
+    def repeated_plan(ctx, task_bus):
+        return AgentRunResult(
+            ok=True,
+            agent_id="prompter",
+            payload={
+                "dispatch": [],
+                "create_tasks": [
+                    {
+                        "assigned_to": "programmer",
+                        "title": "Implement player movement",
+                        "instruction": "Create a CharacterBody2D player with acceleration and jump.",
+                        "kind": "implementation",
+                        "expected_outputs": ["godot_project/scripts/player.gd"],
+                        "file_claims": ["godot_project/scripts/player.gd"],
+                        "phase": 1,
+                    }
+                ],
+                "reasoning": "the player does not exist yet",
+            },
+        )
+
+    monkeypatch.setattr(prompter_agent, "plan", repeated_plan)
+
+    first = dispatcher.tick()
+    assert first.created == ["TASK_001"] or len(first.created) == 1
+
+    second = dispatcher.tick()
+    assert second.created == [], f"tick two created {second.created}"
+
+    titles = [task.title for task in dispatcher.bus.all()]
+    assert titles.count("Implement player movement") == 1
+
+    # The skip is explained rather than silent, so the run log answers "why did nothing happen?".
+    assert "already" in dispatcher.last_outcome.reasoning

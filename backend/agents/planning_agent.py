@@ -176,7 +176,7 @@ def record_answers(project_path: Path, answers: str) -> dict[str, Any]:
         project_path, ChatMessage(message_id=new_id("msg"), role="human", content=answers, meta={"kind": "answers"})
     )
     state = read_state(project_path)
-    updated = _extract_design(project_path, state, answers)
+    updated, extraction = _extract_design(project_path, state, answers)
     write_state(project_path, updated)
     ledger = get_ledger(updated)
     updated["ledger"] = ledger.as_dict()
@@ -208,16 +208,32 @@ def record_answers(project_path: Path, answers: str) -> dict[str, Any]:
                 meta={"kind": "handoff_ready"},
             ),
         )
-    return {"state": read_state(project_path), "ledger": ledger.as_dict(), "questions": questions}
+    return {
+        "state": read_state(project_path),
+        "ledger": ledger.as_dict(),
+        "questions": questions,
+        "extraction": extraction,
+    }
 
 
-def _extract_design(project_path: Path, state: dict[str, Any], answers: str) -> dict[str, Any]:
-    """Turn free-text answers into the structured fields the gate reads."""
+def _extract_design(
+    project_path: Path, state: dict[str, Any], answers: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Turn free-text answers into the structured fields the gate reads.
+
+    Returns the updated state and a short report of what happened, because the failure mode this
+    function used to have was silence: with no working provider it returned the state untouched,
+    the ledger never moved, and the screen kept asking the same questions with no explanation.
+    """
     from .registry import registry
 
     agent = registry.get(AGENT_ID)
     if agent is None:
-        return state
+        return state, {
+            "ok": False,
+            "reason": "the Planning Agent is missing from the roster",
+            "changed": [],
+        }
     context = AgentContext(agent=agent, project_path=project_path)
     context.extra["planner_state"] = {
         key: state.get(key)
@@ -246,17 +262,28 @@ def _extract_design(project_path: Path, state: dict[str, Any], answers: str) -> 
         require_json=True,
     )
     if not run.ok or not run.payload:
-        return state
+        return state, {
+            "ok": False,
+            "reason": (
+                run.pause_reason
+                or "the Planning Agent could not read that answer, so the design state is unchanged"
+            ),
+            "changed": [],
+            "needs_key": bool(run.paused),
+        }
     payload = run.payload
     updated = dict(state)
+    changed: list[str] = []
     for key in ("mechanics", "characters", "reference_images"):
         value = payload.get(key)
-        if isinstance(value, list):
+        if isinstance(value, list) and value:
             updated[key] = value
+            changed.append(key)
     for key in ("art_direction", "level_count", "play_length_minutes", "linear", "godot_version", "title"):
         value = payload.get(key)
         if value not in (None, ""):
             updated[key] = value
+            changed.append(key)
     themes = payload.get("answered_themes")
     if isinstance(themes, list):
         existing = list(state.get("answered_themes") or [])
@@ -274,7 +301,13 @@ def _extract_design(project_path: Path, state: dict[str, Any], answers: str) -> 
         if updated.get("art_direction") and "art" not in existing:
             existing.append("art")
         updated["answered_themes"] = existing
-    return updated
+        if existing:
+            changed.append("answered_themes")
+    return updated, {
+        "ok": bool(changed),
+        "reason": "" if changed else "the answers did not add or change any design field",
+        "changed": sorted(set(changed)),
+    }
 
 
 def request_handoff(project_path: Path) -> dict[str, Any]:

@@ -661,3 +661,52 @@ def test_connecting_an_existing_project_queues_reconciliation_before_any_new_wor
     board = client.get("/api/tasks/board").json()
     titles = [task["title"] for lane in board["lanes"] for task in lane["tasks"]]
     assert titles.count("Reconcile the existing project into the GDD") == 1
+
+
+def test_approval_commits_even_when_the_machine_has_no_git_identity(client, tmp_path, monkeypatch):
+    """The one guarantee: approval is the commit.
+
+    A machine with no global git identity - which is every machine belonging to someone who has
+    never used git - used to make `git commit` fail, so an approval recorded "not committed" and
+    the guarantee quietly evaporated. The commit is now made with an explicit fallback identity
+    for that single command, never by writing the user's git config.
+    """
+    from backend.orchestration.git_ops import GitRepo
+
+    # Isolate from any identity the test machine happens to have.
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "no-global-config"))
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", str(tmp_path / "no-system-config"))
+    # Deleted rather than blanked: git treats an empty GIT_AUTHOR_NAME as "use the empty name",
+    # which is a different failure from having no identity at all.
+    monkeypatch.delenv("GIT_AUTHOR_NAME", raising=False)
+    monkeypatch.delenv("GIT_AUTHOR_EMAIL", raising=False)
+    monkeypatch.delenv("GIT_COMMITTER_NAME", raising=False)
+    monkeypatch.delenv("GIT_COMMITTER_EMAIL", raising=False)
+
+    folder = tmp_path / "identityless"
+    folder.mkdir()
+    repo = GitRepo(folder)
+    repo.init()
+    assert repo.identity()["name"] == ""
+    assert repo._identity_args()[:2] == ["-c", "user.name=PulseG Studio"]
+
+    (folder / "notes.md").write_text("a human approved this\n", encoding="utf-8")
+    from backend.core.models import HumanDecision, Status, Task
+
+    task = Task(
+        task_id="TASK_900",
+        project_id="proj_test",
+        phase=1,
+        assigned_to="documenter",
+        instruction="Write the design summary.",
+        title="Freeze the design summary",
+        status=Status.APPROVED,
+        human_decision=HumanDecision.APPROVED,
+        artifacts=["notes.md"],
+    )
+    result = repo.commit_task(task)
+    assert result.ok, result.message
+    assert result.sha
+
+    # And the user's own configuration was not touched.
+    assert repo.identity()["name"] == ""

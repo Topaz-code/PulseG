@@ -32,6 +32,7 @@ Last updated: 2026-09-11
 | api wiring for approver endpoints (approve / reject / override / bulk) | Done - pipeline tests plus live run |
 | Setup Wizard backend (first-run state, config.yaml write, Godot detection) | Done - wizard tests cover write + rejection |
 | Demo mode end-to-end run through the API | Done - scripts/smoke_api.py, 24 checks |
+| Whole-studio verification through the API (idea -> intake -> gate -> build -> review -> commit) | Done - scripts/verify_pipeline.py, 18 checks |
 | OpenAPI document (drives the frontend types and docs/API.md) | Done - generated and asserted in tests |
 
 ## Frontend (after the API)

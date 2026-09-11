@@ -25,6 +25,11 @@ log = logging.getLogger(__name__)
 
 DEFAULT_BRANCH = "main"
 
+#: Used only when the machine has no git identity at all, and only for the single commit command
+#: that needs it. A user who has configured git keeps their own name on every commit.
+FALLBACK_AUTHOR_NAME = "PulseG Studio"
+FALLBACK_AUTHOR_EMAIL = "studio@pulseg.local"
+
 
 class GitUnavailable(RuntimeError):
     """Git is not installed or not usable on this machine."""
@@ -95,7 +100,7 @@ class GitRepo:
         self._run("init", "-b", DEFAULT_BRANCH, check=False)
         self._run("init", check=False)  # older git without -b
         self.ensure_gitignore()
-        if user_name:
+        if user_name and not self._run("config", "user.name", check=False).stdout.strip():
             self._run("config", "user.name", user_name)
         if user_email:
             self._run("config", "user.email", user_email)
@@ -156,6 +161,37 @@ class GitRepo:
             self._run("checkout", "-b", branch, check=False)
         return branch
 
+    # --- identity ---------------------------------------------------------------
+
+    def author_identity(self) -> tuple[str, str]:
+        """The name and email a commit will carry, or empty strings when git has none.
+
+        A machine with no global git identity is the normal case for someone who has never used
+        git, and git responds by refusing to commit. That used to mean an approval recorded
+        "not committed" - the one guarantee this product makes (approval is the commit) quietly
+        broken by a missing config value. So the identity is looked up here, and when there is
+        none the commit is made with an explicit fallback rather than not made at all.
+        """
+        name = self._run("config", "user.name", check=False).stdout.strip()
+        email = self._run("config", "user.email", check=False).stdout.strip()
+        return name, email
+
+    def _identity_args(self) -> list[str]:
+        """`-c user.name=...` arguments for a commit, only when git has no identity of its own.
+
+        Scoped to the single command on purpose: this never writes to the user's local or global
+        configuration, so the studio cannot change how their other repositories behave.
+        """
+        name, email = self.author_identity()
+        if name and email:
+            return []
+        return [
+            "-c",
+            f"user.name={name or FALLBACK_AUTHOR_NAME}",
+            "-c",
+            f"user.email={email or FALLBACK_AUTHOR_EMAIL}",
+        ]
+
     # --- committing -------------------------------------------------------------
 
     def status(self) -> dict[str, Any]:
@@ -208,7 +244,7 @@ class GitRepo:
 
         message = f"{task.assigned_to}: {summary}\n\n" + "\n".join(body_lines)
         self._run("add", "-A")
-        result = self._run("commit", "-m", message, check=False)
+        result = self._run(*self._identity_args(), "commit", "-m", message, check=False)
         if result.returncode != 0:
             detail = (result.stdout + result.stderr).strip()
             if "nothing to commit" in detail.lower():

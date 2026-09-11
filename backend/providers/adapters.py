@@ -1515,6 +1515,50 @@ class DemoAdapter(ProviderAdapter):
                     "scope_complete": False,
                     "missing": ["win/loss condition", "supporting character behaviour"],
                 },
+                # The intake extraction contract. The Planning Agent merges these keys into the
+                # design state, and the gate reads that state, so a demo run has to satisfy the
+                # contract exactly or PULSEG_DEMO would stall at the first screen. Every field
+                # below is deliberately a complete one: rule long enough to be a rule, a character
+                # with personality and a recognised behaviour pattern, art direction, and scope.
+                "mechanics": [
+                    {
+                        "name": "The lamp beam",
+                        "rule": (
+                            "The beam is an 80 degree cone that sweeps at 45 degrees per second "
+                            "while the aim key is held and stays put when released. A boat inside "
+                            "the cone moves toward harbour at 30 px/s; outside it drifts toward the "
+                            "nearest rock at 12 px/s."
+                        ),
+                        "inputs": ["aim left", "aim right", "release"],
+                        "feedback": "beam colour warms as a boat enters it, and the sea audio lifts",
+                        "failure": "a boat that reaches the rocks restarts the level from the last lantern",
+                    }
+                ],
+                "characters": [
+                    {
+                        "name": "Maren",
+                        "role": "the player character, the lighthouse keeper",
+                        "personality": "calm, methodical, quietly stubborn",
+                        "abilities": ["walk", "climb ladders", "carry one fuel can", "trim the wick", "aim the lamp"],
+                        "ai_behaviour": "scripted - she only does what the player presses",
+                    },
+                    {
+                        "name": "Tomas",
+                        "role": "harbour master who hands over each night's list of boats",
+                        "personality": "warm but impatient",
+                        "abilities": ["hands over the boat list", "warns about incoming storms"],
+                        "ai_behaviour": "stationary - he never leaves the dock",
+                    },
+                ],
+                "art_direction": (
+                    "Warm 32x32 hand-made pixel art in a 24 colour dusk palette: deep indigo sky, "
+                    "amber lamp light, ochre rock, grey-green sea. Silhouette-first shapes, one "
+                    "pixel outline, no anti-aliasing."
+                ),
+                "reference_images": [],
+                "level_count": 6,
+                "play_length_minutes": 4,
+                "linear": True,
                 "ready_for_handoff": False,
                 "gdd_draft_markdown": None,
                 "assumptions": ["2D side-on view unless you prefer top-down"],

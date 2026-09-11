@@ -7,6 +7,36 @@ updated: "2026-09-11"
 
 entries:
   - date: "2026-09-11"
+    area: orchestration
+    summary: >
+      Fixed two defects that only show up when the studio is actually left running. First, the
+      Prompter re-proposed the same task on every tick, so a run produced dozens of identical
+      copies (TASK_014 through TASK_038 in one minute) and buried the human: the dispatcher now
+      refuses a proposed task whose title, expected outputs or file claims match work that is
+      already open, and says which existing task it matched. Second, approvals silently produced
+      no git commit on a machine with no git identity - the one guarantee the product makes -
+      because git refuses to commit without a name; the commit now carries an explicit fallback
+      identity for that single command, never by writing the user's git config.
+    verified: >
+      test_pipeline.py::test_the_prompter_cannot_flood_the_queue_with_the_same_task (two ticks,
+      one task) and test_api.py::test_approval_commits_even_when_the_machine_has_no_git_identity
+      (commit exists, config untouched). scripts/verify_pipeline.py runs the whole studio through
+      the API - idea, intake, gate, handoff, seed, dispatch, auditor, human approval, git commit -
+      and passes 18 checks.
+
+  - date: "2026-09-11"
+    area: planning
+    summary: >
+      The intake can no longer fail silently. record_answers() now reports exactly what the
+      Planning Agent changed (and why nothing changed when the provider is unavailable), the
+      planning endpoint returns that report, and the demo provider answers the extraction contract
+      so PULSEG_DEMO=1 completes the whole intake instead of stalling on the first screen with the
+      same questions forever.
+    verified: >
+      scripts/verify_pipeline.py asserts the merge, the named changed fields and a complete ledger;
+      the API test suite covers the intake and gate paths.
+
+  - date: "2026-09-11"
     area: desktop
     summary: >
       Added the Tauri v2 shell (src-tauri/): window titled PulseG Studio, Python sidecar spawned on
