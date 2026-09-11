@@ -365,7 +365,13 @@ export function fixtureFor(path: string, params: URLSearchParams = new URLSearch
       initialised: true,
       branch: "phase/1-playable-core",
       commits: [
-        { sha: "18f2b65b05c15b2fe8b20d61f184560b30c2a139", short: "18f2b65", message: "documenter: Freeze the design summary", author: "PulseG Studio", date: "2026-09-11T10:55:13+00:00", subject: "documenter: Freeze the design summary" },
+        {
+          sha: "18f2b65b05c15b2fe8b20d61f184560b30c2a139",
+          short: "18f2b65",
+          subject: "documenter: Freeze the design summary",
+          author: "PulseG Studio",
+          date: "2026-09-11T10:55:13+00:00",
+        },
       ],
       status: { initialised: true, dirty: true, files: ["M memory/gdd.md"], branch: "phase/1-playable-core" },
     },

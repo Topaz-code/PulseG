@@ -270,7 +270,17 @@ class GitRepo:
         for line in raw.splitlines():
             parts = line.split("\x1f")
             if len(parts) == 4:
-                commits.append({"sha": parts[0], "author": parts[1], "date": parts[2], "subject": parts[3]})
+                commits.append(
+                    {
+                        "sha": parts[0],
+                        # The short form is what every git UI shows and what the dashboard prints. It
+                        # is derived here so no client has to know how long git makes an abbreviation.
+                        "short": parts[0][:7],
+                        "author": parts[1],
+                        "date": parts[2],
+                        "subject": parts[3],
+                    }
+                )
         return commits
 
     def show(self, sha: str, path: str = "") -> str:

@@ -415,12 +415,15 @@ export type ThemeResponse = {
   note: string;
 };
 
+/**
+ * One row of `/api/git/log`, which is `git log --pretty=%H%x1f%an%x1f%ad%x1f%s` with a short hash
+ * added for display. `files` and `task_id` are filled in by `/api/git/task-commits`, not by the log.
+ */
 export type GitCommit = {
   sha: string;
-  short: string;
+  short?: string;
   subject: string;
   author: string;
-  email: string;
   date: string;
   files?: string[];
   task_id?: string;

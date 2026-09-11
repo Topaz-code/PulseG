@@ -314,7 +314,12 @@ def test_approval_commits_and_rejection_requeues(client):
 
     git_log = client.get("/api/git/log").json()
     assert git_log["initialised"] is True
-    assert any("documenter" in commit["subject"] for commit in git_log["commits"])
+    entry = next(commit for commit in git_log["commits"] if "documenter" in commit["subject"])
+    # The shape the dashboard reads: a full hash, the abbreviation it prints, and the subject line.
+    # The short form is derived server-side so no client has to know how git abbreviates.
+    assert entry["author"], "every commit names an author"
+    assert entry["short"] == entry["sha"][:7]
+    assert entry["subject"].startswith("documenter:")
     runtime.stop(wait=True)
 
 

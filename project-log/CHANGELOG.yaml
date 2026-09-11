@@ -7,6 +7,21 @@ updated: "2026-09-11"
 
 entries:
   - date: "2026-09-11"
+    area: git
+    summary: >
+      /api/git/log now sends a `short` hash with each commit. The dashboard printed `commit.short`
+      and the rows only carried the full sha, so the abbreviation column was blank against the real
+      API - the fixture had invented the field, which is how a fixture can hide a bug. The view also
+      falls back to the sha now, and the row type describes what the endpoint really returns.
+    verified: >
+      Live approval over HTTP on the running studio: POST /api/tasks/TASK_001/approve returned
+      commit sha 1388baa0... on branch phase/1-playable-core, the log row carried author "PulseG
+      Studio" and the matching short hash, and TASK_002 came back unblocked. python -m pytest - 93
+      tests pass, including the added assertion that short == sha[:7].
+    notes:
+      - "Found by comparing the live response keys against the fixture while setting up a live demo project, not by a test."
+
+  - date: "2026-09-11"
     area: frontend
     summary: >
       Setup Wizard defect and a contract check that would have caught it. The "Find Godot on this

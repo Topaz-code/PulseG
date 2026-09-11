@@ -130,7 +130,9 @@ export function GitHistory() {
                       )}
                     >
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono text-xs text-teal-300">{commit.short}</span>
+                        <span className="font-mono text-xs text-teal-300">
+                          {(commit.short ?? commit.sha).slice(0, 7)}
+                        </span>
                         <span className="text-sm text-mint-100">{commit.subject}</span>
                         {taskId ? <Badge tone="muted">{taskId}</Badge> : null}
                         <span className="ml-auto text-[11px] text-muted">{relativeTime(commit.date)}</span>
