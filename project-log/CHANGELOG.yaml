@@ -7,6 +7,28 @@ updated: "2026-09-11"
 
 entries:
   - date: "2026-09-11"
+    area: frontend
+    summary: >
+      Setup Wizard defect and a contract check that would have caught it. The "Find Godot on this
+      computer" button called POST /api/settings/godot/detect; the route is GET-only, so the API
+      answered 405 and the button did nothing at all - on the first screen a new user ever sees. It
+      is a GET now, and the wizard's answer is read from either the found path or the first
+      candidate. The wizard also gained four tests (it opens on the Godot step, fills the projects
+      folder from the first-run state, asks over GET, and refuses to finish without a projects
+      folder), and the frontend test setup now unmounts between tests: with `globals: false`
+      Testing Library's automatic cleanup never registers, so trees were stacking up in the document
+      and a query could match a previous test's screen.
+    verified: >
+      npm test - 17 tests pass across three files. python -m pytest backend/tests -q - 93 tests pass,
+      including backend/tests/test_frontend_contract.py, which scrapes every api.get/post/... call
+      site out of src/ and matches its shape against the app's own OpenAPI document. That test names
+      the file and line of an unmatched call and says which verb the API actually serves; a second
+      test proves it fails on a wrong verb, so it cannot pass for the wrong reason.
+    notes:
+      - "The checker normalises both sides into one pattern language first, counting braces so an interpolation like ${sub ? `?sub=${x}` : ''} cannot truncate the path it is matching."
+      - "The 405 was invisible because the mutation had no onError: a failed request looked like a button that did nothing."
+
+  - date: "2026-09-11"
     area: planning
     summary: >
       The intake now keeps the report of what it read from each answer, and the Planning rail shows

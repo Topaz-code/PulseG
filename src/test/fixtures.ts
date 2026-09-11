@@ -410,6 +410,7 @@ export function fixtureFor(path: string, params: URLSearchParams = new URLSearch
       config: { user_name: "PulseG Studio", user_email: "studio@pulseg.local", auto_init: true, branch_per_phase: true, commit_on_approval_only: true },
     },
     "/api/settings/godot": { configured: true, version: "4.3", detected: ["/usr/bin/godot"], works: true, message: "" },
+    // GET, and the shape the route really returns: the candidates it found and the configured path.
     "/api/settings/godot/detect": { candidates: ["/usr/bin/godot"], configured: "/usr/bin/godot" },
     "/api/settings/storage": {
       studio_home: { path: "/tmp/pulseg-test/home", bytes: 1024 },

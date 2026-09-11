@@ -151,7 +151,8 @@ describe("GitHistory", () => {
   it("lists the commits the human approvals produced", async () => {
     const { container } = renderView(<GitHistory />);
     expect(await screen.findByText(/1 saved point/)).toBeTruthy();
-    expect(await screen.findByText("Freeze the design summary")).toBeTruthy();
+    // The subject line is prefixed with the agent that wrote it: "documenter: Freeze the design ...".
+    expect(await screen.findByText(/Freeze the design summary/)).toBeTruthy();
     expect(container.textContent).toMatch(/phase\/1-playable-core/);
     expectNoLeakedInternals(container);
   });

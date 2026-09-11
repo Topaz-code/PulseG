@@ -44,11 +44,16 @@ export function SetupWizard({ open, onFinished }: { open: boolean; onFinished: (
   }, [firstRun]);
 
   const detect = useMutation({
-    mutationFn: () => api.post<{ candidates: string[]; found: string }>("/api/settings/godot/detect"),
+    // GET, which is what the route is: the button asks the backend to look at the disk, and asking
+    // is not a change. It used to POST here, which the API answers with 405 and the wizard swallowed.
+    mutationFn: () => api.get<{ candidates: string[]; found?: string; configured?: string }>(
+      "/api/settings/godot/detect",
+    ),
     onSuccess: (result) => {
-      if (result.found) {
-        setGodotPath(result.found);
-        showToast({ title: "Found Godot", body: result.found, tone: "success" });
+      const found = result.found || result.candidates?.[0] || "";
+      if (found) {
+        setGodotPath(found);
+        showToast({ title: "Found Godot", body: found, tone: "success" });
       } else {
         showToast({
           title: "Godot was not found automatically",

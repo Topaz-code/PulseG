@@ -8,6 +8,16 @@
  * layout that no headless DOM can verify anyway.
  */
 
+import { cleanup } from "@testing-library/react";
+import { afterEach } from "vitest";
+
+// With `globals: false` Testing Library's automatic cleanup never registers, and rendered trees
+// accumulate in the document: a second test then finds two of everything. One explicit hook is all
+// it takes, and it keeps every test file isolated from the one before it.
+afterEach(() => {
+  cleanup();
+});
+
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = function scrollIntoView() {
     /* no layout in jsdom; the call exists so hooks that follow the tail do not throw */
