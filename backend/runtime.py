@@ -85,7 +85,18 @@ class StudioRuntime:
         with self._lock:
             if self._record is None:
                 self._record = projects.active_project()
+                # Name the project on first read. The run state is published to the dashboard and
+                # the top bar, and only set_active() used to stamp it - so after a restart with a
+                # project already open, the studio ran the dispatch loop with a nameless run state.
+                self._stamp_project(self._record)
             return self._record
+
+    def _stamp_project(self, record: dict[str, Any] | None) -> None:
+        """Record which project this runtime is working on, for anything that asks."""
+        if not record:
+            return
+        self.state.project_id = str(record.get("project_id", ""))
+        self.state.project_name = str(record.get("name", ""))
 
     @property
     def project_path(self) -> Path | None:
@@ -105,8 +116,7 @@ class StudioRuntime:
             self._record = record
             self._dispatcher = None
         if record:
-            self.state.project_id = str(record.get("project_id", ""))
-            self.state.project_name = str(record.get("name", ""))
+            self._stamp_project(record)
             update_config(active_project_id=str(record.get("project_id", "")))
             recovered = self.recover_in_flight()
             if recovered:
@@ -271,6 +281,9 @@ class StudioRuntime:
         return outcome
 
     def as_dict(self) -> dict[str, Any]:
+        # Whoever asks for the run state wants to know which project it is about, so make sure the
+        # name is on it even if nothing else has touched the runtime since startup.
+        self._stamp_project(self.record)
         return self.state.as_dict()
 
 

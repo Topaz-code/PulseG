@@ -43,7 +43,6 @@ const ACTIVE_PROJECT = {
     counts: {},
     phase: { phase: 1, phases_total: 6, approved: 2, total: 6, percent: 33 },
     review_count: 1,
-    run_state: runState(),
   },
   run_state: runState(),
 };
@@ -193,7 +192,6 @@ export function fixtureFor(path: string, params: URLSearchParams = new URLSearch
       counts: { PENDING: 1, NEEDS_HUMAN_REVIEW: 1, APPROVED: 1 },
       phase: ACTIVE_PROJECT.overview.phase,
       review_count: 1,
-      run_state: runState(),
     },
     "/api/tasks/review": {
       items: [

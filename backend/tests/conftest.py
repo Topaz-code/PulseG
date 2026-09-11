@@ -35,6 +35,23 @@ def isolated_studio(tmp_path, monkeypatch):
     config_module.load_config.cache_clear() if hasattr(config_module.load_config, "cache_clear") else None
     yield {"home": paths_module.studio_home(), "projects": paths_module.projects_root()}
 
+    # The runtime is a process-wide singleton and it caches the project it is bound to. A test that
+    # created a project would otherwise leave it pointing at a directory that is about to be deleted,
+    # and the next test - which expects "no project open" - would silently see a stale one.
+    from backend.runtime import runtime
+
+    if runtime.state.status != "idle":
+        runtime.stop(wait=True)
+    runtime._record = None
+    runtime._dispatcher = None
+    runtime.state.project_id = ""
+    runtime.state.project_name = ""
+    runtime.state.status = "idle"
+    runtime.state.ticks = 0
+    runtime.state.started_at = 0.0
+    runtime.state.last_outcome = {}
+    runtime.state.last_error = ""
+
 
 @pytest.fixture
 def studio_home(isolated_studio) -> Path:

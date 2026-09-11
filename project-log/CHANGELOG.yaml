@@ -7,6 +7,27 @@ updated: "2026-09-11"
 
 entries:
   - date: "2026-09-11"
+    area: runtime
+    summary: >
+      Two live defects from leaving the studio running and reading its real payloads. The Overview
+      screen read `board.run_state`, which /api/tasks/board never sent: the primary button always
+      said "Start the build team" and the status badge always said "Idle", even mid-run. It reads
+      /api/logs/run-state now, the Board type no longer claims a field that never existed, and the
+      fixtures stopped inventing one. Second, the run state reported a blank project_id and
+      project_name after a restart - they were only stamped when a project was switched - so the
+      runtime now stamps them whenever the run state is read. The test suite's own isolation was
+      wrong in the same way: `runtime` is a process-wide singleton and conftest never unbound it, so
+      a test that created a project left the next test seeing a stale active project. conftest
+      resets it now, which exposed a test that had been relying on exactly that leak.
+    verified: >
+      Live: POST /api/logs/run-state/start reported the project name on the running studio, and the
+      board plus run-state payloads were read back over the Vite proxy. python -m pytest - 94 tests
+      pass, including the new "the run state names the project it is running" test; npm test - 17
+      tests pass with the corrected fixtures.
+    notes:
+      - "Both bugs were invisible to green tests: the frontend fixtures had invented board.run_state, and the backend test had been passing on a leaked project."
+
+  - date: "2026-09-11"
     area: git
     summary: >
       /api/git/log now sends a `short` hash with each commit. The dashboard printed `commit.short`

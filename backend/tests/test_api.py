@@ -46,6 +46,29 @@ def test_first_run_reports_what_is_missing(client):
     assert isinstance(body["git_identity"]["available"], bool)
 
 
+def test_the_run_state_names_the_project_it_is_running(client):
+    """A restarted studio must still say which project its dispatch loop is working on.
+
+    The state carried project_id/project_name, but they were only stamped when a project was
+    switched, so a process that started with a project already open reported a blank name - and the
+    dashboard's top bar reads this payload to label the run.
+    """
+    project = client.post(
+        "/api/projects", json={"name": "Harbour Watch", "mode": "fresh", "concept": "a puzzle about tides"}
+    ).json()["project"]
+
+    from backend.runtime import runtime
+
+    # What a restart looks like: the cached record is gone and the state has not been stamped yet.
+    runtime._record = None
+    runtime.state.project_id = ""
+    runtime.state.project_name = ""
+
+    state = client.get("/api/logs/run-state").json()["run_state"]
+    assert state["project_name"] == "Harbour Watch"
+    assert state["project_id"] == project["project_id"]
+
+
 def test_operations_requiring_a_project_say_so_clearly(client):
     """A clear 409 with an action beats a 500 with a traceback."""
     response = client.get("/api/tasks/board")
@@ -358,6 +381,11 @@ def test_unknown_task_and_agent_are_reported_usefully(client):
 
 
 def test_agents_endpoints_expose_chains_and_readiness(client):
+    # The roster is studio-wide; the per-agent states are not - they report what each agent is doing
+    # on the open project, so this test opens one instead of relying on whatever a previous test left
+    # active. (It did rely on that, and only passed because of it.)
+    client.post("/api/projects", json={"name": "Roster", "mode": "fresh"})
+
     roster = client.get("/api/agents").json()
     assert len(roster["agents"]) == 12
     ids = {row["agent_id"] for row in roster["agents"]}
@@ -368,7 +396,7 @@ def test_agents_endpoints_expose_chains_and_readiness(client):
     assert [entry["slot"] for entry in programmer["chain_entries"]] == ["primary", "fallback1", "fallback2"]
     assert programmer["primary"]["provider"]
 
-    # Agent states are studio-wide (what each agent is doing, its last error): no project needed.
+    # Per-agent state: idle or working, which task it holds, whether it has a usable chain.
     states = client.get("/api/agents/states").json()
     assert len(states["agents"]) == 12
     assert {row["status"] for row in states["agents"]} <= {"idle", "working", "paused", "blocked", "offline"}

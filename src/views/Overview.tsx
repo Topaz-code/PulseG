@@ -8,6 +8,7 @@ import {
   useReviewQueue,
   useNotifications,
   useRunControl,
+  useRunState,
 } from "@/lib/queries";
 import { useStudio } from "@/lib/store";
 import { AgentChip, Badge, StatusPill } from "@/components/ui/badge";
@@ -39,7 +40,11 @@ export function Overview() {
   const project = active?.project;
   const stats = active?.overview.stats;
   const phase = active?.overview.phase;
-  const runState = board?.run_state;
+  // The run state comes from /api/logs/run-state, not from the board: /api/tasks/board never sent
+  // it, so the button used to read "Start the build team" and the badge "Idle" even while the team
+  // was working. One endpoint owns this, and this is it.
+  const { data: runStateData } = useRunState();
+  const runState = runStateData?.run_state;
 
   if (!project) {
     return (

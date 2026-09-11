@@ -41,7 +41,7 @@ export function TopBar() {
   const menuRef = useRef<HTMLDivElement>(null);
 
   const project = active?.project;
-  const runState = active?.run_state ?? active?.board?.run_state;
+  const runState = active?.run_state;
   const reviewCount = active?.board?.review_count ?? 0;
   const status = runState?.status ?? "idle";
 

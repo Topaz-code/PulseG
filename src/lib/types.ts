@@ -114,12 +114,15 @@ export type Lane = {
   tasks: Task[];
 };
 
+/**
+ * The Kanban board. Note what is *not* here: the run state. `/api/tasks/board` never sent one, so a
+ * screen that read `board.run_state` got undefined and rendered as if the studio were idle.
+ */
 export type Board = {
   lanes: Lane[];
   counts: Record<string, number>;
   phase: PhaseProgress;
   review_count: number;
-  run_state: RunState;
 };
 
 export type PhaseProgress = {
