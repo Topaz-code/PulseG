@@ -151,6 +151,24 @@ function agentStates() {
  * Route a request path to a fixture. Throws on anything unmapped - see the note at the top.
  */
 /**
+ * Fixtures a test has changed, by route.
+ *
+ * Most tests want the captured response exactly as it came off the wire. A few need one field in a
+ * different state - the planning rail has to be checked both when the intake read an answer and
+ * when it could not. Rather than duplicating a whole response, a test patches the field it is
+ * about, and `installFetch` clears the patches so they cannot leak into the next test.
+ */
+const overrides = new Map<string, Json>();
+
+/**
+ * Patch one fixture for the next install. The patch is merged, so a test names only what it changes.
+ */
+export function stubFixture(path: string, patch: Json): void {
+  const base = fixtureFor(path);
+  overrides.set(path, { ...base, ...patch });
+}
+
+/**
  * The response for one API call.
  *
  * `path` is the pathname with the query string removed, and `params` carries the query, because a
@@ -336,6 +354,9 @@ export function fixtureFor(path: string, params: URLSearchParams = new URLSearch
       concept: "A cosy platformer about a lighthouse keeper.",
       confirmed: false,
       started: false,
+      // Empty until the human answers something: the rail shows nothing until there is a read to
+      // report. `/api/planning/state` sends {} here, never null, which is what the view checks.
+      extraction: {},
     },
     "/api/knowledge": { entries: [], count: 0, by_type: {}, by_trust: {} },
     "/api/knowledge/stats": { entries: 0, files: 0, bytes: 0, sources: [], untrusted: [], note: "" },
@@ -548,6 +569,7 @@ export function fixtureFor(path: string, params: URLSearchParams = new URLSearch
     "/api/git/show": { sha: "18f2b65", markdown: "# Commit\n", diff: "" },
   };
 
+  if (overrides.has(route)) return overrides.get(route) as Json;
   if (route in exact) return exact[route];
 
   // Prefix rules for the few endpoints with an id in the middle.
@@ -599,6 +621,7 @@ export function fixtureFor(path: string, params: URLSearchParams = new URLSearch
 
 /** Install the fixture router as global fetch. Returns a restore function. */
 export function installFetch(): () => void {
+  overrides.clear();
   const original = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;

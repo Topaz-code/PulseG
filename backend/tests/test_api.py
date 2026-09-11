@@ -107,6 +107,58 @@ def test_creating_a_project_starts_the_intake(client):
     assert project_id
 
 
+def test_the_intake_reports_what_it_read_from_an_answer(client, monkeypatch):
+    """An answer that changes nothing has to say why, or the checklist looks broken.
+
+    The Planning Agent turns prose into the structured fields the gate checks, and that read needs a
+    model. With demo mode on it succeeds; with nothing configured it fails, and in both cases the
+    report is kept in the planning state so the rail can show it after a reload - not just in the
+    response to the POST that produced it.
+    """
+    client.post("/api/projects", json={"name": "Keeper", "mode": "fresh", "concept": "A platformer"})
+    state = client.get("/api/planning/state").json()
+    assert state["extraction"] == {}, "nothing has been answered yet, so there is nothing to report"
+
+    monkeypatch.setenv("PULSEG_DEMO", "1")
+    answered = client.post(
+        "/api/planning/answer",
+        json={
+            "answers": (
+                "The core mechanic is a wall jump: the keeper may jump once more while touching a "
+                "wall. Our hero is Marlow, the keeper, a patient and stubborn old sailor who can "
+                "carry a lantern and push crates; he patrols the harbour wall. The look is warm "
+                "32x32 pixel art at dusk. Six levels, about four minutes each, played in order."
+            )
+        },
+    ).json()
+    assert answered["extraction"]["ok"] is True, answered["extraction"]
+    assert answered["extraction"]["changed"], "a successful read must name the fields it filled in"
+
+    # Persisted, so the rail still explains itself on the next page load.
+    reloaded = client.get("/api/planning/state").json()["extraction"]
+    assert reloaded["ok"] is True
+    assert reloaded["changed"] == answered["extraction"]["changed"]
+    assert reloaded["at"]
+
+    # And when no model can answer, the report says so and points at the key screen.
+    monkeypatch.delenv("PULSEG_DEMO", raising=False)
+
+    def no_provider(_path, state, _answers):
+        report = {
+            "ok": False,
+            "reason": "No provider with a key could be reached.",
+            "changed": [],
+            "needs_key": True,
+        }
+        return state, report
+
+    monkeypatch.setattr("backend.agents.planning_agent._extract_design", no_provider)
+    blocked = client.post("/api/planning/answer", json={"answers": "something else entirely"}).json()
+    assert blocked["extraction"]["ok"] is False
+    assert blocked["extraction"]["needs_key"] is True
+    assert client.get("/api/planning/state").json()["extraction"]["needs_key"] is True
+
+
 def test_build_gate_stays_closed_until_the_design_is_complete(client):
     client.post("/api/projects", json={"name": "Keeper", "mode": "fresh", "concept": "A platformer about jumping"})
     gate = client.get("/api/planning/gate").json()

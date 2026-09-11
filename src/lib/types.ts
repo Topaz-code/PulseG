@@ -290,6 +290,20 @@ export type PlanningState = {
   concept: string;
   confirmed: boolean;
   started: boolean;
+  /**
+   * The report of what the last answer produced.
+   *
+   * The Planning Agent reads free text into the structured fields the gate checks, and that read can
+   * fail quietly - no key, a provider outage, prose with nothing extractable in it. When it does, the
+   * checklist stays where it was, so this is what lets the rail say why.
+   */
+  extraction?: {
+    ok: boolean;
+    reason?: string;
+    changed?: string[];
+    needs_key?: boolean;
+    at?: string;
+  };
 };
 
 export type GraphNode = {

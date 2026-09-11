@@ -7,6 +7,26 @@ updated: "2026-09-11"
 
 entries:
   - date: "2026-09-11"
+    area: planning
+    summary: >
+      The intake now keeps the report of what it read from each answer, and the Planning rail shows
+      it. `/api/planning/state` returns `extraction`, `record_answers` writes it into the session
+      state so it survives a reload, and the rail prints one line: either the fields it filled in
+      ("Mechanics, Art direction") or why nothing was read, with a button to the key screen when the
+      reason was a missing provider. Before this, an answer that could not be read left the
+      checklist exactly where it was, which looks identical to the studio ignoring the human.
+      The design-taste audit also learned to skip `.test.tsx` files: the frontend tests live beside
+      the views, and auditing them as screens turned a well-tested codebase into a failing audit.
+    verified: >
+      python -m pytest backend/tests -q - 90 tests pass, including the two-sided API test (demo mode
+      reads an answer and persists the report; a provider that cannot answer is reported with
+      needs_key). npm test - 13 tests pass, including four for the rail's empty, read, unreadable and
+      changed-nothing states. scripts/design_audit.py --check - 9 of 9 screens pass.
+    notes:
+      - "The report is persisted, not just returned: a POST response cannot explain a screen the user reloads."
+      - "stubFixture() lets one frontend test patch a single field of a captured response instead of duplicating it."
+
+  - date: "2026-09-11"
     area: frontend
     summary: >
       Added a frontend test harness (vitest + jsdom + Testing Library) that renders all nine views

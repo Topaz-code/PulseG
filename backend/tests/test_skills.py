@@ -321,6 +321,31 @@ def test_checklist_has_eight_items():
     assert len(design_taste.checklist()) == 8
 
 
+def test_the_audit_skips_test_files_beside_the_screens(tmp_path):
+    """A `.test.tsx` is not a screen and must not be judged like one.
+
+    The frontend tests live next to the views they render. Pointing the audit at the views folder
+    picked them up as screens with no primary action and no empty state, which turned a well-tested
+    codebase into a failing audit.
+    """
+    (tmp_path / "TaskBoard.tsx").write_text(
+        """
+        <div className="p-6 gap-4">
+          <button data-primary-action className="bg-canary-yellow hover:opacity-90 disabled:opacity-50 focus-visible:ring-2">Start</button>
+          {items.length === 0 ? <p>Nothing here yet.</p> : null}
+          {items.map((item) => <div key={item.id}>{item.name}</div>)}
+        </div>
+        """,
+        encoding="utf-8",
+    )
+    (tmp_path / "TaskBoard.test.tsx").write_text("<div />", encoding="utf-8")
+
+    reviews, combined = design_taste.review_repo(tmp_path)
+    assert [review["screen"] for review in reviews] == ["TaskBoard"]
+    assert combined.metrics["screens"] == 1
+    assert combined.metrics["screens_passing"] == 1
+
+
 # --- adhd_filter ------------------------------------------------------------------------------
 
 

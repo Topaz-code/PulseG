@@ -376,6 +376,11 @@ def review_repo(views_dir: Path) -> tuple[list[dict[str, Any]], SkillResult]:
         combined.summary = "Nothing to audit yet."
         return reviews, combined
     for path in sorted(views_dir.rglob("*.tsx")):
+        # Test files live beside the screens now. They are not screens: they have no primary action
+        # to audit and no empty state to design, and counting them would report the audit failing
+        # whenever a well-tested screen exists.
+        if path.name.endswith(".test.tsx"):
+            continue
         source = path.read_text(encoding="utf-8", errors="replace")
         analysis = analyse_screen_source(source, screen=path.stem)
         reviews.append(analysis)

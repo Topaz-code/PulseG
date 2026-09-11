@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { cn, humanise } from "@/lib/utils";
 import { useAnswerQuestion, useConfirmDesign, useHandoff, usePlanning, useSeedTasks } from "@/lib/queries";
 import { useStudio } from "@/lib/store";
@@ -7,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/field";
 import { EmptyState, Progress, ScrollArea, Spinner } from "@/components/ui/feedback";
 import { MarkdownView } from "@/components/MarkdownView";
-import { IconCheck, IconChevronRight, IconSend, IconSparkle } from "@/components/Icons";
+import { IconAlert, IconCheck, IconChevronRight, IconKey, IconSend, IconSparkle } from "@/components/Icons";
 
 /**
  * The planning rail: the design conversation that has to finish before the build team starts.
@@ -25,6 +26,7 @@ export function ContextRail() {
   const confirm = useConfirmDesign();
   const seed = useSeedTasks();
   const showToast = useStudio((state) => state.showToast);
+  const navigate = useNavigate();
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [confirmedText, setConfirmedText] = useState("");
   const [draft, setDraft] = useState<string | null>(null);
@@ -55,6 +57,8 @@ export function ContextRail() {
     { key: "scope_complete", label: "Scope is decided" },
     { key: "tech_complete", label: "Engine version is known" },
   ] as const;
+
+  const openSettings = () => navigate("/settings");
 
   const submitAnswer = (question: string) => {
     const value = (answers[question] ?? "").trim();
@@ -128,6 +132,8 @@ export function ContextRail() {
               })}
             </ul>
           </section>
+
+          <ExtractionNote extraction={planning.extraction} onOpenSettings={openSettings} />
 
           {planning.questions.length > 0 && !planning.confirmed ? (
             <section>
@@ -268,5 +274,53 @@ export function ContextRail() {
         </p>
       </div>
     </div>
+  );
+}
+
+/**
+ * What the last answer did, in one line.
+ *
+ * The intake reads prose into structured fields through a model, so an answer can land with nothing
+ * extracted - no key configured, a provider outage, or text with nothing usable in it. In every one
+ * of those cases the checklist above simply does not move, which looks like the studio ignored the
+ * human. This says which of them happened and what to do about it. Nothing is shown before the
+ * first answer, and nothing is shown when the read worked and changed nothing, because "read
+ * successfully, nothing new" is not worth a line of screen.
+ */
+function ExtractionNote({
+  extraction,
+  onOpenSettings,
+}: {
+  extraction?: { ok: boolean; reason?: string; changed?: string[]; needs_key?: boolean; at?: string };
+  onOpenSettings: () => void;
+}) {
+  if (!extraction || (!extraction.ok && !extraction.reason)) return null;
+
+  if (extraction.ok) {
+    const changed = extraction.changed ?? [];
+    if (changed.length === 0) return null;
+    return (
+      <section className="rounded-md border border-app-border bg-charcoal-800 px-3 py-2">
+        <p className="text-xs text-muted">Read from your last answer</p>
+        <p className="text-sm text-mint-200">{changed.map((field) => humanise(field)).join(", ")}</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-md border border-canary-700 bg-charcoal-800 px-3 py-2">
+      <p className="flex items-center gap-2 text-xs text-canary-300">
+        {extraction.needs_key ? <IconKey size={14} /> : <IconAlert size={14} />}
+        Nothing was read from your last answer
+      </p>
+      <p className="mt-1 text-sm text-mint-200">
+        {extraction.reason || "The planning model did not answer."}
+      </p>
+      {extraction.needs_key ? (
+        <Button variant="secondary" size="sm" className="mt-2" onClick={onOpenSettings}>
+          Add a provider key
+        </Button>
+      ) : null}
+    </section>
   );
 }

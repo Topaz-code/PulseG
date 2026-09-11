@@ -41,6 +41,9 @@ def state() -> dict[str, Any]:
         "questions": grillme.next_questions(stored.get("answered_themes") or [], ledger),
         "chat": [message.model_dump(mode="json") for message in memory.read_chat(context.path)][-80:],
         "concept": stored.get("concept", ""),
+        # What the last answer actually produced, so the rail can explain a checklist that did not
+        # move instead of leaving the human to wonder whether the studio heard them.
+        "extraction": stored.get("extraction") or {},
         "confirmed": bool(stored.get("handoff_confirmed")),
         "started": bool(stored.get("phase_started")),
     }

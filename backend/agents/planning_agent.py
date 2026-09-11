@@ -16,7 +16,7 @@ from typing import Any
 
 from ..core.atomic import atomic_write_json, read_json
 from ..core.config import new_id
-from ..core.models import ChatMessage, Status, Task
+from ..core.models import ChatMessage, Status, Task, iso, utcnow
 from ..orchestration import memory
 from ..skills import grillme
 from .base import AgentContext, AgentRunResult, note_agent_state, run_text_agent
@@ -177,6 +177,10 @@ def record_answers(project_path: Path, answers: str) -> dict[str, Any]:
     )
     state = read_state(project_path)
     updated, extraction = _extract_design(project_path, state, answers)
+    # Keep the report of what the last answer produced. It is the difference between "the checklist
+    # did not move" and "the checklist did not move because no provider answered" - the second one
+    # is actionable, and the rail can only say it if the attempt was recorded.
+    updated["extraction"] = {**extraction, "at": iso(utcnow())}
     write_state(project_path, updated)
     ledger = get_ledger(updated)
     updated["ledger"] = ledger.as_dict()
