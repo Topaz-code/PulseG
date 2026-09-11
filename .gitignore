@@ -1,0 +1,57 @@
+# --- Node / frontend ---
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+npm-debug.log*
+pnpm-debug.log*
+coverage/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+backend/build/
+backend/dist/
+
+# --- Tauri / Rust ---
+src-tauri/target/
+src-tauri/gen/
+
+# --- Secrets & local runtime state (NEVER commit) ---
+keys.enc
+*.enc
+.env
+.env.*
+!.env.example
+config.yaml
+projects.json
+
+# --- Build artifacts ---
+release/
+*.exe
+!scripts/**/*.exe
+*.msi
+*.AppImage
+*.dmg
+*.deb
+
+# --- Project runtime data (generated on user machines) ---
+pulsegstudio-projects/
+demo-projects/
+.web-build-cache/
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,1 @@
+"""PulseG Studio notifications package."""

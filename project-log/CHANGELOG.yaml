@@ -1,0 +1,88 @@
+# PulseG Studio changelog.
+# Newest first. Every entry says what changed and what was verified by running it -
+# "it should work" is not an entry, "the test suite covers it" is.
+project: PulseG Studio
+version: 0.9.0
+updated: "2026-09-11"
+
+entries:
+  - date: "2026-09-11"
+    area: providers
+    summary: >
+      Rewrote backend/providers/specs.py as the authoritative 20-provider table with explicit
+      verified / conditional / substituted states, and added require_spec(). Generated
+      project-log/PROVIDER_VERIFICATION.md from that table via scripts/build_provider_report.py
+      so the log cannot drift from the app.
+    verified: >
+      python -c "from backend.providers import specs, base, adapters, router" imports cleanly
+      (20 providers). Re-run after any provider edit.
+    notes:
+      - "Z.ai and Routeway are substituted by OpenRouter (z-ai/glm-4.5-air:free, qwen3-coder:free), not dropped."
+      - "Free-forever set: groq, google_ai_studio, mistral, sealion, openrouter, opencode_zen, ytdlp, stable_horde, pollinations, kenney, telegram, demo."
+      - "One-time credits: deepgram, firecrawl, nvidia_nim - the quota meter labels these as rations."
+
+  - date: "2026-09-11"
+    area: skills
+    summary: >
+      Completed the skills layer: humanizer (rhythm, contractions, voice collapse, on-the-nose
+      emotion), harvard_shape (Burrows' Delta over most-frequent words, Cosine Delta,
+      average-linkage clustering, from Nature s41599-025-05986-3), grillme (the deterministic
+      handoff gate), adhd_filter (20-line progress tail, ## SUMMARY only, budgeted omissions)
+      and design_taste (the D.7 checklist enforced against frontend source).
+    verified: >
+      backend/tests/test_skills.py - 30 tests pass, including the ordering the paper predicts
+      (uniform text scores lower delta cv and a lower normalised merge height than varied text)
+      and WCAG AA contrast on the shipped palette.
+    notes:
+      - "harvard_shape states plainly which numbers come from the paper (the method) and which are heuristics (the thresholds); it refuses to conclude when a corpus is too small."
+      - "The human-author baseline is the human's own planning messages, not a detector's guess."
+
+  - date: "2026-09-11"
+    area: agents
+    summary: >
+      Wrote all twelve agent modules plus the dispatch table: planning_agent (intake state in
+      memory/planning_state.json, confirm_handoff writes ## DESIGN CONFIRMATION), prompter,
+      researcher, transcriptor, documenter, image_generator, audio_curator, programmer, tester,
+      story_writer, task_processor and the auditor runner.
+    verified: >
+      pyflakes clean across backend/agents. The pipeline tests exercise documenter, programmer
+      and tester end to end on the demo provider.
+    notes:
+      - "Agents stamp PULSEG_AGENT: <id> into the user message so demo mode and diagnostics route deterministically instead of guessing from keywords."
+      - "A paused result (paused=True + pause_reason) is the zero-abandonment signal; callers turn it into NEEDS_INTERVENTION."
+
+  - date: "2026-09-11"
+    area: orchestration
+    summary: >
+      Added orchestration/auditor.py, dispatcher.py, approvals.py and context_engine.py. The
+      Auditor runs deterministic skills first and lets the model lower the score but never
+      overrule a high-severity finding; the dispatcher recovers paused tasks, plans with the
+      Prompter, dispatches in parallel under the one-task-per-agent and file-lock rules, and
+      routes every submission through SUBMITTED -> AUDITING -> NEEDS_HUMAN_REVIEW; approvals.py
+      is the only code path that commits.
+    verified: >
+      backend/tests/test_pipeline.py - 11 tests pass, including "no commit exists before the
+      human approves", "approval commits and unblocks dependents", "rejection requires a note
+      and requeues with it", and "two tasks may not hold the same file".
+    notes:
+      - "PULSEG_DEMO=1 appends the demo provider to every capable chain, so demo mode cannot reach the network even when real keys are present."
+      - "human_rejections is a separate counter from decline_count: an Auditor decline rotates the model, a human rejection is feedback."
+
+  - date: "2026-09-11"
+    area: tooling
+    summary: >
+      Bootstrapped the test suite: backend/tests/conftest.py points the studio at a temporary
+      home and projects root for every test, with fixtures for a project, its task bus and its
+      dispatcher.
+    verified: "49 tests pass (router 8, skills 30, pipeline 11)."
+    notes:
+      - "respx intercepts httpx for the provider tests; no test touches the network."
+      - "pyflakes is installed in the venv and the whole backend is clean."
+
+  - date: "2026-09-11"
+    area: documentation
+    summary: >
+      project-log started: PROCESS.md (build order, seven architectural rules, network reality,
+      testing strategy), PROVIDER_VERIFICATION.md (generated), CHANGELOG.yaml, TASKS_TODO.md,
+      UNCERTAIN_CODE.md, SECURITY_REVIEW_NEEDED.md and RESOLUTIONS.md.
+    verified: "PROVIDER_VERIFICATION.md is regenerated by a script, so it is reproducible."

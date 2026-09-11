@@ -1,0 +1,56 @@
+# PulseG Studio - Python backend (sidecar) dependencies
+# Pinned to compatible ranges; CI freezes exact versions into requirements.lock.txt
+
+# --- Web framework / realtime ---
+fastapi>=0.115.6,<0.120
+uvicorn[standard]>=0.34.0,<0.40
+websockets>=13.1
+python-multipart>=0.0.20
+httpx>=0.28.1,<0.30
+
+# --- Data / config validation ---
+pydantic>=2.10.4,<3
+pydantic-settings>=2.7.0
+PyYAML>=6.0.2
+python-dotenv>=1.0.1
+orjson>=3.10.13
+
+# --- Secrets ---
+cryptography>=44.0.0
+
+# --- File watching (task bus / memory files) ---
+watchfiles>=1.0.3
+
+# --- Git ---
+GitPython>=3.1.43
+
+# --- Screenshots (Windows/macOS/Linux local machine) ---
+mss>=10.0.0
+Pillow>=11.0.0
+
+# --- Provider SDKs / helpers ---
+google-genai>=0.8.3          # Google AI Studio (Gemini 2.5 Flash, multimodal tester)
+openai>=1.59.0               # OpenAI-compatible providers: Groq, Mistral, OpenRouter,
+                             # Routeway, Z.ai, SEA-LION, OpenCode Zen, NVIDIA NIM
+groq>=0.13.1                 # Groq native SDK (fastest path; optional - HTTP works too)
+mistralai>=1.2.5             # Mistral / Codestral native SDK
+deepgram-sdk>=3.9.0          # Deepgram STT
+huggingface-hub>=0.27.0      # HuggingFace Inference API (pixel-art / diffusion models)
+firecrawl-py>=1.9.0          # Firecrawl (web -> clean Markdown)
+yt-dlp>=2024.12.13           # YouTube subtitles/metadata (no key required) - Researcher/Transcriptor
+google-api-python-client>=2.158.0  # YouTube Data API v3 (optional, key-based search)
+
+# --- Media ---
+ffmpeg-python>=0.2.0         # thin wrapper around the FFmpeg binary (see ffmpeg_mcp.py)
+
+# --- Notifications ---
+winotify>=1.1.0 ; sys_platform == "win32"   # Windows toast notifications fallback
+
+# --- Packaging / ops ---
+pyinstaller>=6.11.1 ; python_version >= "3.10"
+psutil>=6.1.1
+
+# --- Testing ---
+pytest>=8.3.4
+pytest-asyncio>=0.25.0
+respx>=0.22.0
