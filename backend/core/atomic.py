@@ -11,6 +11,7 @@ import errno
 import json
 import os
 import tempfile
+import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -158,6 +159,45 @@ def file_lock(path: Path, timeout: float = 20.0, poll: float = 0.05) -> Iterator
         if handle is not None:
             os.close(handle)
         lock_path.unlink(missing_ok=True)
+
+
+_REENTRANT: dict[str, tuple[threading.RLock, list[int]]] = {}
+_REENTRANT_GUARD = threading.Lock()
+
+
+@contextmanager
+def reentrant_lock(path: Path, timeout: float = 20.0) -> Iterator[None]:
+    """Exclusive lock on ``path`` that a single thread may take more than once.
+
+    ``file_lock`` is a raw ``O_CREAT|O_EXCL`` lock, so taking it twice in one thread would
+    spin until it timed out and broke the operation. That matters here because the natural
+    shape of the code is: ``transition()`` locks the queue, and the ``_persist()`` it calls
+    wants to lock the same queue again. This wrapper adds a per-path ``RLock`` plus a depth
+    counter held in the same critical section as the OS lock, so nesting is free, other
+    threads still serialise, and other *processes* (a second PulseG window on the same
+    project folder) still serialise through the lock file.
+    """
+    key = str(Path(path).resolve())
+    with _REENTRANT_GUARD:
+        state = _REENTRANT.get(key)
+        if state is None:
+            state = (threading.RLock(), [0])
+            _REENTRANT[key] = state
+    rlock, depth = state
+    with rlock:
+        if depth[0]:
+            depth[0] += 1
+            try:
+                yield
+            finally:
+                depth[0] -= 1
+            return
+        depth[0] = 1
+        try:
+            with file_lock(path, timeout=timeout):
+                yield
+        finally:
+            depth[0] = 0
 
 
 def _lock_is_stale(lock_path: Path, max_age: float = 60.0) -> bool:

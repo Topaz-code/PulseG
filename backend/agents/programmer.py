@@ -37,7 +37,22 @@ def run(ctx: AgentContext, *, validate: bool = True) -> AgentRunResult:
             run_result.problems.append(
                 f"Godot validation ({validation.transport}): {validation.message}"
             )
-            if not validation.ok:
+            if validation.transport == "unavailable":
+                # No Godot on the machine is an environment problem, not a defect in this
+                # task's work. Fail the run and the dispatcher burns its retries and pauses a
+                # task whose files are perfectly good. Keep the artifacts, record the caveat
+                # so it reaches the Auditor's report and the human's drawer, and let the
+                # Setup Wizard / Settings screen own the fix. Runtime verification still
+                # belongs to the Tester, which does hard-fail without Godot - that is the
+                # check that actually needs an executable, so nothing slips through.
+                log.warning(
+                    "Godot is not configured; skipping static validation for %s", ctx.task_id
+                )
+                run_result.notes.append(
+                    "Unverified: Godot is not configured, so these scripts and scenes were "
+                    "not parse-checked. Set the Godot path in Settings to enable validation."
+                )
+            elif not validation.ok:
                 run_result.ok = False
                 run_result.error = validation.message
                 log.warning("Godot validation failed for %s: %s", ctx.task_id, validation.message)

@@ -118,29 +118,56 @@ def review(
             )
 
     # 3. Godot-specific structural checks on emitted scene/script files
-    if re.search(r"```file:\s*\S*\.tscn", text):
-        if "CollisionShape2D" not in text and re.search(r"CharacterBody2D|Area2D|RigidBody2D", text):
+    #
+    # Scenes are checked one block at a time. `load_steps` is a per-file count, so comparing a
+    # header against resources found anywhere in a multi-file submission reports a bogus high
+    # severity defect - and a high severity finding forces a DECLINE. That is how a perfectly
+    # good scene ends up needing a human override.
+    scenes: list[tuple[str, str]] = [
+        (path, body) for path, body in blocks if (path or "").endswith(".tscn")
+    ]
+    if not scenes:
+        scenes = [
+            (path or "", body)
+            for path, body in blocks
+            if body.lstrip().startswith("[gd_scene")
+        ]
+    for scene_path, body in scenes:
+        where = f"{context}:{scene_path}" if scene_path else context
+        if "CollisionShape2D" not in body and re.search(r"CharacterBody2D|Area2D|RigidBody2D", body):
             result.add(
                 "Scene uses a physics body with no CollisionShape2D child - it will run but "
                 "nothing will collide",
                 severity="high",
-                location=context,
+                location=where,
                 recommendation=(
                     "Add a CollisionShape2D node with a real Shape2D sub-resource under "
                     "every physics body."
                 ),
             )
-        if re.search(r"\[gd_scene[^\]]*load_steps=(\d+)", text):
-            declared = int(re.search(r"load_steps=(\d+)", text).group(1))  # type: ignore[union-attr]
-            actual = len(re.findall(r"^\[(ext_resource|sub_resource)", text, re.MULTILINE)) + 1
+        header = re.search(r"\[gd_scene[^\]]*load_steps=(\d+)", body)
+        if header:
+            declared = int(header.group(1))
+            actual = len(re.findall(r"^\[(ext_resource|sub_resource)", body, re.MULTILINE)) + 1
             if declared != actual:
                 result.add(
                     f"Scene header declares load_steps={declared} but {actual - 1} resources "
                     "are defined - Godot may fail to load the scene",
                     severity="high",
-                    location=context,
+                    location=where,
                     recommendation=f"Set load_steps={actual} (resources + 1).",
                 )
+        undefined = _undefined_sub_resources(body)
+        if undefined:
+            result.add(
+                "Scene references sub-resources that are never defined: " + ", ".join(undefined),
+                severity="high",
+                location=where,
+                recommendation=(
+                    "Define each SubResource() in the same file, or the scene will fail to load "
+                    "when that node is instantiated."
+                ),
+            )
 
     if re.search(r"```file:\s*\S*\.gd", text):
         for label, terms in REQUIRED_GODOT_TERMS.items():
@@ -219,3 +246,15 @@ def review(
         else "Submission is structurally complete."
     )
     return result
+
+
+def _undefined_sub_resources(scene: str) -> list[str]:
+    """SubResource references in a ``.tscn`` that the file never defines.
+
+    Godot loads the scene fine right up until the node that uses the missing resource is
+    instantiated, so this failure shows up as "the player is invisible" several tasks later.
+    Catching it here keeps the debugging cost inside the task that caused it.
+    """
+    defined = set(re.findall(r'^\[sub_resource[^\]]*id="([^"]+)"', scene, re.MULTILINE))
+    referenced = set(re.findall(r'SubResource\("([^"]+)"\)', scene))
+    return sorted(referenced - defined)

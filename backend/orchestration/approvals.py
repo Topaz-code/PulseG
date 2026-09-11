@@ -10,6 +10,10 @@ human has exactly three moves, and this module is the only thing allowed to perf
 
 The commit happens here and nowhere else, which is what makes "commit only on human-approved
 tasks" a property of the code rather than a promise in a document.
+
+Notifications fire only on the four triggers the specification names. Approving and rejecting
+are the human's own actions, so they are logged to ``progress.md`` and not pushed back at the
+person who just did them - except for a completed phase, which is worth knowing about.
 """
 from __future__ import annotations
 
@@ -27,16 +31,6 @@ log = logging.getLogger(__name__)
 
 class ApprovalError(RuntimeError):
     pass
-
-
-def _notify(kind: str, title: str, body: str, *, path: Path | None = None) -> None:
-    """Fire the notification channels, never letting a failed notification block the gate."""
-    try:
-        from ..notifications import service
-
-        service.notify(kind=kind, title=title, body=body, project_path=path)
-    except Exception as exc:  # pragma: no cover - notifications are best effort
-        log.info("Notification skipped (%s): %s", kind, exc)
 
 
 def review_queue(bus: TaskBus) -> list[dict[str, Any]]:
@@ -60,6 +54,7 @@ def review_queue(bus: TaskBus) -> list[dict[str, Any]]:
                 "provider": task.provider_used,
                 "model": task.model_used,
                 "decline_count": task.decline_count,
+                "human_rejections": task.human_rejections,
                 "override_needed": bool(verdict and verdict.is_declined),
             }
         )
@@ -112,7 +107,7 @@ def approve(
                 task_id,
                 Status.APPROVED,
                 reason="commit recorded",
-                commit_sha=commit.sha,
+                committed=commit.sha,
                 commit_branch=commit.branch,
             )
         except TransitionError:
@@ -124,19 +119,12 @@ def approve(
         bus.path,
         f"{task_id} approved by the human"
         + (" (override of the Auditor's decline)" if override else "")
-        + (f" - committed {commit.sha[:8]}" if commit.ok and commit.sha else ""),
+        + (f" - committed {commit.sha[:8]}" if commit.ok and commit.sha else " - not committed"),
         agent="human",
         task_id=task_id,
         status="APPROVED",
     )
-    _notify(
-        "task_approved",
-        f"{task_id} approved",
-        f"{approved.title} is committed"
-        + (f" and unblocked {len(unblocked)} task(s)." if unblocked else "."),
-        path=bus.path,
-    )
-    return {
+    result: dict[str, Any] = {
         "task": approved.model_dump(mode="json"),
         "commit": {
             "ok": commit.ok,
@@ -149,6 +137,10 @@ def approve(
         "unblocked": unblocked,
         "override": override,
     }
+    milestone = _milestone_if_complete(bus, approved.phase)
+    if milestone:
+        result["phase_complete"] = milestone
+    return result
 
 
 def reject(bus: TaskBus, task_id: str, *, note: str, auditor_note: str = "") -> dict[str, Any]:
@@ -172,12 +164,6 @@ def reject(bus: TaskBus, task_id: str, *, note: str, auditor_note: str = "") -> 
         task_id=task_id,
         status="REJECTED",
     )
-    _notify(
-        "task_rejected",
-        f"{task_id} sent back",
-        f"{rejected.title} was rejected. The note has been merged into the instruction.",
-        path=bus.path,
-    )
     return {"task": rejected.model_dump(mode="json")}
 
 
@@ -189,11 +175,12 @@ def override_and_approve(bus: TaskBus, task_id: str, *, note: str, git: GitRepo 
             "must show the reasoning behind going ahead anyway."
         )
     result = approve(bus, task_id, note=f"OVERRIDE: {note}", override=True, git=git)
-    _notify(
-        "task_overridden",
-        f"{task_id} approved over the Auditor",
-        note[:200],
-        path=bus.path,
+    memory.append_progress(
+        bus.path,
+        f"{task_id} approved over the Auditor's decline: {note[:200]}",
+        agent="human",
+        task_id=task_id,
+        status="OVERRIDE",
     )
     return result
 
@@ -215,9 +202,10 @@ def phase_gate(bus: TaskBus, phase: int) -> dict[str, Any]:
     open_tasks = [task for task in tasks if task.status is not Status.APPROVED]
     blocked = [task for task in open_tasks if task.status is Status.NEEDS_HUMAN_REVIEW]
     paused = [task for task in open_tasks if task.status is Status.NEEDS_INTERVENTION]
-    complete = not open_tasks
+    complete = not open_tasks and bool(tasks)
     return {
         "phase": phase,
+        "label": _phase_labels().get(phase, ""),
         "complete": complete,
         "total": len(tasks),
         "approved": len(tasks) - len(open_tasks),
@@ -233,6 +221,37 @@ def phase_gate(bus: TaskBus, phase: int) -> dict[str, Any]:
             else "Keep approving tasks until nothing is open in this phase."
         ),
     }
+
+
+def _milestone_if_complete(bus: TaskBus, phase: int) -> dict[str, Any] | None:
+    gate = phase_gate(bus, phase)
+    if not gate["complete"] or gate["total"] == 0:
+        return None
+    try:
+        from ..notifications import service as notification_service
+
+        notification_service.notify_phase_complete(phase, gate["label"], project_path=bus.path)
+    except Exception as exc:  # pragma: no cover - notifications are best effort
+        log.info("Phase-complete notification skipped: %s", exc)
+    try:
+        from . import projects
+
+        record = _record_for(bus.path)
+        if record is not None and record.get("mode") == "fresh":
+            mark = projects.mark_milestone(record, phase)
+            gate["milestone"] = mark
+    except Exception as exc:  # pragma: no cover - milestone marking is additive
+        log.info("Milestone marking skipped: %s", exc)
+    return gate
+
+
+def _record_for(project_path: Path) -> dict[str, Any] | None:
+    from . import projects
+
+    for record in projects.list_projects():
+        if Path(record.get("path", "")).resolve() == Path(project_path).resolve():
+            return record
+    return None
 
 
 def commit_history(bus: TaskBus, limit: int = 50) -> list[dict[str, str]]:

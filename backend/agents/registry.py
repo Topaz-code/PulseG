@@ -125,8 +125,29 @@ class AgentRegistry:
         return updated
 
     def set_chain(self, agent_id: str, primary: dict[str, str], fallbacks: list[dict[str, str]]) -> AgentDefinition:
-        """Replace an agent's model chain. The UI's drag-to-reorder writes through here."""
+        """Replace an agent's model chain. The UI's drag-to-reorder writes through here.
+
+        Provider ids are validated against the provider table. Without this a typo accepted by
+        the drag-and-drop editor would silently become a dead slot in the chain, and the first
+        sign of trouble would be a task that pauses at 3 a.m. with no obvious cause.
+        """
         agent = self.require(agent_id)
+        problems: list[str] = []
+        for slot, raw in [("primary", primary)] + [
+            (f"fallback{index + 1}", item) for index, item in enumerate(fallbacks[:3])
+        ]:
+            provider_id = str(raw.get("provider", "")).strip()
+            spec = get_spec(provider_id)
+            if spec is None:
+                problems.append(
+                    f"{slot}: unknown provider '{provider_id}'. Pick one of: "
+                    + ", ".join(sorted(PROVIDERS))
+                )
+            elif not str(raw.get("model", "")).strip():
+                problems.append(f"{slot}: pick a model for {spec.name}")
+        if problems:
+            raise RegistryError("; ".join(problems))
+
         mutable = agent.model_dump()
         mutable["primary"] = ModelRef.model_validate(primary).model_dump()
         mutable["fallbacks"] = [ModelRef.model_validate(item).model_dump() for item in fallbacks[:3]]

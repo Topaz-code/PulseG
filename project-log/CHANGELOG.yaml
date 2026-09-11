@@ -7,6 +7,51 @@ updated: "2026-09-11"
 
 entries:
   - date: "2026-09-11"
+    area: api
+    summary: >
+      Built the whole HTTP + WebSocket surface: backend/api/{deps,schemas,ws}.py, thirteen
+      routers (system, settings, projects, tasks, agents, providers, planning, assets,
+      knowledge, logs, git, design, preview) and backend/main.py with the lifespan hooks the
+      Tauri sidecar needs (bus bind, index rebuild, crash recovery of in-flight tasks).
+      One error envelope for the entire API: {error, message, action, ...extras}.
+    verified: >
+      backend/tests/test_api.py - 31 tests over a real TestClient (health, first-run, Setup
+      Wizard, project lifecycle, grill-me gate, dispatch to the human gate, approve/reject/
+      override, config-only agent addition, provider key masking, file-path scoping, WebSocket
+      hello + replay, OpenAPI). scripts/smoke_api.py - 24 checks against a real
+      `python -m backend.main` process on a socket, including the WebSocket.
+    notes:
+      - "guarded() resolves type hints from the decorated function's own module, otherwise FastAPI turns every request model into a query parameter and every POST 422s."
+      - "Literal routes (/quota, /verification) are declared before /{provider_id}; a parameterised route declared first swallows them."
+      - "An already-approved task now answers 409 approval_refused instead of 500: ApprovalError is mapped in api.deps."
+
+  - date: "2026-09-11"
+    area: notifications
+    summary: >
+      Added notifications/service.py and wired the four real triggers into the dispatcher:
+      needs review, needs intervention (paused), all fallbacks exhausted, phase complete.
+      Telegram (getMe + sendMessage), Windows toasts through winotify when available, and an
+      always-on in-app log at ~/.pulsegstudio/notifications.json. Quiet hours are honoured and
+      delivery failures are recorded, never raised.
+    verified: >
+      api tests cover readiness reporting, log recording, mark-read and the notification
+      endpoint shape; the smoke run shows a needs_review notification landing for a real task.
+    notes:
+      - "Secrets are scrubbed before anything is logged or sent: bot tokens, bearer tokens and key-shaped strings."
+      - "A declined submission cannot be approved by accident - the human must use Override, and the override is recorded on the task."
+
+  - date: "2026-09-11"
+    area: skills
+    summary: >
+      Fixed two false-positive generators in deslop that forced DECLINE verdicts on good work:
+      the load_steps check compared a scene header against every resource in a whole
+      multi-file response, and nothing detected a SubResource() that the scene never defines.
+      Scenes are now checked one block at a time, and undefined sub-resource references are
+      reported with their own high-severity finding.
+    verified: >
+      A demo programmer submission that used to be DECLINED now reaches the human gate with
+      verdict APPROVED (scripts/smoke_api.py, live run). test_skills.py still passes.
+  - date: "2026-09-11"
     area: providers
     summary: >
       Rewrote backend/providers/specs.py as the authoritative 20-provider table with explicit

@@ -5,10 +5,18 @@ That server is a Node child process the user has to install, so this module has 
 transports** and picks automatically:
 
 1. **MCP** (stdio JSON-RPC). Used when the server is reachable; gives scene/script editing
-   tools and the in-engine screenshot route.
+   tools, project metadata and the debug-output pipe.
 2. **Direct CLI** (``godot --headless``). Always available once the user sets the Godot path
    in the Setup Wizard. Used for ``--check-only`` script validation, headless project runs
    and ``--export-debug Web``.
+
+What the MCP server actually exposes was verified against ``@coding-solo/godot-mcp`` 0.1.0
+(14 tools: launch_editor, run_project, get_debug_output, stop_project, get_godot_version,
+list_projects, get_project_info, create_scene, add_node, load_sprite, export_mesh_library,
+save_scene, get_uid, update_project_uids). Note what is **not** there: script validation and
+the Web export. Both live on the CLI path, which is why the CLI is not a downgrade - it is
+the only route to the acceptance-critical "export the game to the browser" step. Anything
+that claims ``godot.validate`` over MCP is a bug, not a feature.
 
 Having the CLI path is what makes the app work on day one for a user who has Godot but has
 not installed any MCP server - and the dashboard always shows which transport is in use, so
@@ -86,8 +94,13 @@ class GodotMCPClient:
         )
 
     def mcp_available(self) -> bool:
-        """Probe the MCP server once per client. Never raises."""
-        if not self.prefer_mcp:
+        """Probe the MCP server once per client. Never raises.
+
+        The MCP server drives an installed Godot editor, so when no Godot executable is
+        configured there is nothing to probe for: skip the process spawn and let the caller
+        fall through to the "set your Godot path" message.
+        """
+        if not self.prefer_mcp or not self.cli_available:
             return False
         if self._mcp_checked:
             return self._mcp is not None
@@ -105,7 +118,7 @@ class GodotMCPClient:
         return False
 
     def transport(self) -> str:
-        if self.mcp_available():
+        if self.cli_available and self.mcp_available():
             return "mcp"
         if self.cli_available:
             return "cli"
@@ -126,18 +139,14 @@ class GodotMCPClient:
         """
         targets = [path for path in files if path.endswith(".gd")]
         started = time.perf_counter()
-        if self.mcp_available() and self._mcp is not None:
-            try:
-                result = self._mcp.call("godot.validate", {"projectPath": str(self.project_path)})
-                return GodotResult(
-                    ok=bool(result.get("ok", True)),
-                    transport="mcp",
-                    message="Validated through the Godot MCP server.",
-                    data=result,
-                    duration_ms=int((time.perf_counter() - started) * 1000),
-                )
-            except Exception as exc:
-                log.warning("MCP validate failed (%s); using the CLI instead", exc)
+        if not targets and not self.cli_available:
+            # Nothing to check and no Godot installed: this is not a failure, it is a no-op.
+            return GodotResult(
+                ok=True,
+                transport="unavailable",
+                message="No scripts to check.",
+                duration_ms=0,
+            )
 
         if not self.cli_available:
             return GodotResult(
@@ -371,7 +380,11 @@ class MCPStdioSession:
         try:
             self._send({"jsonrpc": "2.0", "id": self._next_id, "method": "initialize", "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "PulseG Studio", "version": "0.9.0"}}})
             reply = self._read(timeout=6.0)
-            return bool(reply)
+            if not reply:
+                return False
+            # The spec requires the client to acknowledge initialize before any tool call.
+            self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+            return True
         except Exception:
             return False
 

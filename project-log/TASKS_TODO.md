@@ -17,19 +17,22 @@ Last updated: 2026-09-11
 | agents: 12 modules + registry + loader | Written, executed for documenter/programmer/tester on the demo provider | test_pipeline.py |
 | orchestration: memory, git_ops, task_bus, projects | Done | Lifecycle test + pipeline tests |
 | orchestration: auditor, dispatcher, approvals, context_engine | Done | test_pipeline.py, 11 tests |
-| mcp: filesystem, godot client, screenshots, ffmpeg | Written, not yet executed | Import-clean, pyflakes clean |
+| runtime.py: run state, dispatch loop thread, crash recovery of in-flight tasks | Done | Exercised through the API and the live smoke run |
+| runtime concurrency: reentrant queue lock, one task per agent per pass | Done | test_pipeline.py file-lock and agent-busy tests; lost-update race fixed |
+| mcp: filesystem, godot client, screenshots, ffmpeg | Written, not yet executed against a real Godot install | Import-clean, pyflakes clean, live smoke run |
 
-## Backend surface (next)
+## Backend surface
 
 | Area | State |
 | --- | --- |
-| backend/main.py: FastAPI app, static web build, sidecar shutdown | Not started |
-| api/routers: projects, tasks, agents, providers, gallery, git, logs, settings, planning | Not started |
-| WebSocket /ws/events fed by core/events.bus | Not started |
-| notifications/service.py: Telegram + Windows toast, wired to the four triggers | Not started |
-| api wiring for approver endpoints (approve / reject / override) | Not started |
-| Setup Wizard backend (first-run state, config.yaml write, Godot detection) | Config layer done, wizard endpoint not started |
-| Demo mode end-to-end run through the API | Not started |
+| backend/main.py: FastAPI app, static web build, sidecar shutdown | Done - boots on a real socket, scripts/smoke_api.py |
+| api/routers: 13 routers (system, settings, projects, tasks, agents, providers, planning, assets, knowledge, logs, git, design, preview) | Done - test_api.py, 31 tests |
+| WebSocket /ws/events fed by core/events.bus, with replay + heartbeat | Done - hello + replay covered by test and smoke run |
+| notifications/service.py: Telegram + Windows toast, wired to the four triggers | Done - endpoint, log and trigger tests |
+| api wiring for approver endpoints (approve / reject / override / bulk) | Done - pipeline tests plus live run |
+| Setup Wizard backend (first-run state, config.yaml write, Godot detection) | Done - wizard tests cover write + rejection |
+| Demo mode end-to-end run through the API | Done - scripts/smoke_api.py, 24 checks |
+| OpenAPI document (drives the frontend types and docs/API.md) | Done - generated and asserted in tests |
 
 ## Frontend (after the API)
 

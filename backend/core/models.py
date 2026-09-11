@@ -222,6 +222,7 @@ class Task(BaseModel):
     file_claims: list[str] = Field(default_factory=list)  # files this task may write
     attempts: list[AttemptRecord] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    comments: list[dict[str, Any]] = Field(default_factory=list)  # human notes that are not decisions
     decline_count: int = 0  # consecutive Auditor declines with the same model (drives rotation)
     human_rejections: int = 0  # times the human sent this back; counted separately on purpose
     audit_rounds: int = 0
@@ -508,7 +509,11 @@ class NotificationEvent(BaseModel):
     project_id: str = ""
     task_id: str = ""
     created_at: str = Field(default_factory=lambda: iso(utcnow()))
+    #: Which channels accepted the message. ``log`` is always True - the in-app list is the
+    #: channel that can never fail, and it is what the bell icon reads.
     delivered: dict[str, bool] = Field(default_factory=dict)
+    #: Human-readable delivery notes ("Telegram: sent", "quiet hours", ...).
+    delivery_detail: list[str] = Field(default_factory=list)
     read: bool = False
 
 

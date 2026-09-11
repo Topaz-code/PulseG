@@ -669,6 +669,74 @@ def web_build_path(record: dict[str, Any]) -> Path:
     return project_path_of(record) / "web_build"
 
 
+def milestones_path(record: dict[str, Any]) -> Path:
+    return project_path_of(record) / "reports" / "milestones.json"
+
+
+def read_milestones(record: dict[str, Any]) -> list[dict[str, Any]]:
+    payload = read_json(milestones_path(record), default=[])
+    return payload if isinstance(payload, list) else []
+
+
+def mark_milestone(record: dict[str, Any], phase: int, *, notes: str = "") -> dict[str, Any]:
+    """Record an approved phase milestone and refresh the web export for the Live Preview.
+
+    The web export is only regenerated here - after a human approved the last task of a phase -
+    because an export mid-phase would show a half-built game and mislead the person watching
+    the preview pane.
+    """
+    project_dir = project_path_of(record)
+    entry: dict[str, Any] = {
+        "phase": phase,
+        "label": next((item["name"] for item in PHASES if int(item["id"]) == phase), ""),
+        "at": utcnow(),
+        "notes": notes,
+        "export": {"attempted": False, "ok": False, "message": ""},
+    }
+    try:
+        from ..core.config import load_config
+        from ..mcp.godot_mcp_client import GodotMCPClient
+
+        config = load_config()
+        executable = config.godot.executable
+        entry["export"]["attempted"] = True
+        if not executable:
+            entry["export"]["message"] = (
+                "No Godot executable configured, so the web export was not regenerated. "
+                "Set it in Settings > Godot."
+            )
+        else:
+            client = GodotMCPClient(executable=executable, project_path=project_dir / "godot_project")
+            try:
+                result = client.export_web(web_build_path(record))
+                entry["export"].update(
+                    {"ok": result.ok, "message": result.message, "transport": result.transport}
+                )
+            finally:
+                client.close()
+    except Exception as exc:
+        entry["export"]["message"] = f"Web export failed: {exc}"[:300]
+
+    milestones = read_milestones(record)
+    milestones = [item for item in milestones if int(item.get("phase", -1)) != phase]
+    milestones.append(entry)
+    milestones.sort(key=lambda item: int(item.get("phase", 0)))
+    atomic_write_json(milestones_path(record), milestones)
+
+    updated = dict(record)
+    updated["phase"] = max(int(record.get("phase", 0) or 0), phase)
+    _update_record(updated)
+    bus.publish("milestone", {"project_id": record.get("project_id", ""), **entry})
+    memory.append_progress(
+        project_dir,
+        f"phase {phase} milestone approved"
+        + (f"; web export {'succeeded' if entry['export']['ok'] else 'not regenerated'}" ),
+        agent="human",
+        status="MILESTONE",
+    )
+    return entry
+
+
 def forget_project(project_id: str, *, delete_files: bool = False) -> dict[str, Any]:
     """Remove a project from the studio. Files are kept unless explicitly deleted."""
     record = get_project(project_id)

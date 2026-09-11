@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
-from ..core.atomic import atomic_write_json
+from ..core.atomic import atomic_write_json, reentrant_lock
 from ..core.events import bus
 from ..core.index import index
 from ..core.models import (
@@ -104,6 +104,36 @@ class TaskBus:
         file_claims: Sequence[str] = (),
         priority: int = 100,
     ) -> Task:
+        with self._lock():
+            return self._create_locked(
+                assigned_to=assigned_to,
+                instruction=instruction,
+                title=title,
+                created_by=created_by,
+                phase=phase,
+                kind=kind,
+                dependencies=dependencies,
+                context_files=context_files,
+                expected_outputs=expected_outputs,
+                file_claims=file_claims,
+                priority=priority,
+            )
+
+    def _create_locked(
+        self,
+        *,
+        assigned_to: str,
+        instruction: str,
+        title: str = "",
+        created_by: str = "prompter",
+        phase: int = 1,
+        kind: str = "implementation",
+        dependencies: Sequence[str] = (),
+        context_files: Sequence[str] = (),
+        expected_outputs: Sequence[str] = (),
+        file_claims: Sequence[str] = (),
+        priority: int = 100,
+    ) -> Task:
         task = Task(
             task_id=self.next_id(),
             project_id=self.project_id,
@@ -127,7 +157,20 @@ class TaskBus:
         return task
 
     def transition(self, task_id: str, new_status: Status, *, reason: str = "", **fields: Any) -> Task:
-        """Validate and apply a state change, writing the file before returning."""
+        """Validate and apply a state change, writing the file before returning.
+
+        The whole read-validate-write cycle runs under the project's queue lock. Without it
+        two agents finishing at the same moment each read the queue, each replace their own
+        entry, and one of the two writes is lost - which shows up much later as "Cannot move
+        TASK_00x from PENDING to SUBMITTED", because the lost write put the task back to
+        PENDING on disk while the other thread thought it was IN_PROGRESS.
+        """
+        with self._lock():
+            return self._transition_locked(task_id, new_status, reason=reason, **fields)
+
+    def _transition_locked(
+        self, task_id: str, new_status: Status, *, reason: str = "", **fields: Any
+    ) -> Task:
         task = self.get(task_id)
         if task is None:
             raise TransitionError(f"Unknown task {task_id}")
@@ -155,6 +198,10 @@ class TaskBus:
 
     def claim(self, task_id: str, agent_id: str, *, force: bool = False) -> Task:
         """Move a task to IN_PROGRESS, enforcing the file-conflict rule (spec C.2)."""
+        with self._lock():
+            return self._claim_locked(task_id, agent_id, force=force)
+
+    def _claim_locked(self, task_id: str, agent_id: str, *, force: bool = False) -> Task:
         task = self.get(task_id)
         if task is None:
             raise TransitionError(f"Unknown task {task_id}")
@@ -162,6 +209,17 @@ class TaskBus:
             raise TransitionError(
                 f"{task_id} is assigned to {task.assigned_to}, not {agent_id}."
             )
+        if task.status is Status.PENDING:
+            busy = [
+                other.task_id
+                for other in self.by_status(Status.IN_PROGRESS)
+                if other.assigned_to == agent_id and other.task_id != task_id
+            ]
+            if busy:
+                raise TransitionError(
+                    f"{task_id} cannot start while {agent_id} is still working on "
+                    f"{busy[0]}. One task per agent at a time."
+                )
         conflicts = self.file_conflicts(task, ignore=[task_id])
         if conflicts:
             detail = "; ".join(f"{other.task_id} holds {path}" for other, path in conflicts[:3])
@@ -424,7 +482,19 @@ class TaskBus:
     # --- internals ---------------------------------------------------------------
 
     def _persist(self, task: Task) -> None:
-        """Write the task back to the file that owns it."""
+        """Write the task back to the file that owns it.
+
+        Callers normally hold the queue lock already (``reentrant_lock`` makes the nested
+        acquire free), but taking it here too means any future caller that writes a task
+        directly still cannot lose a concurrent update.
+        """
+        with self._lock():
+            self._persist_locked(task)
+
+    def _lock(self) -> Any:
+        return reentrant_lock(memory.queue_path(self.path))
+
+    def _persist_locked(self, task: Task) -> None:
         queue = self.open_tasks()
         found = False
         for position, existing in enumerate(queue):

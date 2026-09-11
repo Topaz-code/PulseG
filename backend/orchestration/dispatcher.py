@@ -287,10 +287,20 @@ class Dispatcher:
         return outcome
 
     def _runnable(self) -> list[tuple[Task, str]]:
-        """Unblocked tasks paired with the reason they cannot run (empty string means go)."""
+        """Unblocked tasks paired with the reason they cannot run (empty string means go).
+
+        The reserved-agents set matters more than it looks: at the start of a pass no task is
+        IN_PROGRESS yet, so a naive check would hand the same agent two tasks in the same
+        pass. A human's task and a Prompter's task for the same agent then raced, and one of
+        the two lost its state update. One agent, one task, always.
+        """
         rows: list[tuple[Task, str]] = []
+        reserved: set[str] = set()
         for task in sorted(self.bus.unblocked_pending(), key=lambda item: (item.phase, item.priority, item.task_id)):
             if self._agent_running(task.assigned_to):
+                rows.append((task, f"{task.assigned_to} already has a task in flight"))
+                continue
+            if task.assigned_to in reserved:
                 rows.append((task, f"{task.assigned_to} already has a task in flight"))
                 continue
             conflicts = self.bus.file_conflicts(task)
@@ -298,6 +308,7 @@ class Dispatcher:
                 other, path = conflicts[0]
                 rows.append((task, f"file lock: {path} is being written by {other.task_id}"))
                 continue
+            reserved.add(task.assigned_to)
             rows.append((task, ""))
         return rows
 
@@ -350,6 +361,8 @@ class Dispatcher:
         auditing = self.bus.start_audit(task_id)
         verdict = auditor_module.audit_task(self.path, auditing, router=self.router)
         reviewed = self.bus.record_verdict(task_id, verdict)
+        # Trigger one of the four notifications: a person has to decide something.
+        self._notify_review(reviewed)
         return {
             "submitted": True,
             "needs_review": True,
@@ -405,11 +418,7 @@ class Dispatcher:
             task_id=task_id,
             status="PAUSED",
         )
-        self._notify(
-            "needs_intervention",
-            f"{task_id} needs your intervention",
-            reason[:400],
-        )
+        self._notify_intervention(paused, reason)
         return paused
 
     def _check_stall(self, outcome: DispatchOutcome) -> None:
@@ -423,19 +432,35 @@ class Dispatcher:
             if blocked:
                 detail = ", ".join(f"{task.task_id} waiting on {task.dependencies}" for task in blocked[:4])
                 outcome.errors.append(f"Pipeline stalled: {detail}")
-                self._notify(
-                    "pipeline_stalled",
-                    "The build pipeline is stalled",
-                    f"{len(blocked)} task(s) are blocked with nothing in flight: {detail}",
+                self._notify_stalled(
+                    f"{len(blocked)} task(s) are blocked with nothing in flight: {detail}"
                 )
 
-    def _notify(self, kind: str, title: str, body: str) -> None:
+    # --- notifications (the four real triggers only) ----------------------------------
+
+    def _notify_review(self, task: Task) -> None:
         try:
             from ..notifications import service
 
-            service.notify(kind=kind, title=title, body=body, project_path=self.path)
+            service.notify_needs_review(task, project_path=self.path)
         except Exception as exc:  # pragma: no cover - best effort
-            log.info("Notification skipped (%s): %s", kind, exc)
+            log.info("Review notification skipped: %s", exc)
+
+    def _notify_intervention(self, task: Task, reason: str) -> None:
+        try:
+            from ..notifications import service
+
+            service.notify_needs_intervention(task, reason, project_path=self.path)
+        except Exception as exc:  # pragma: no cover - best effort
+            log.info("Intervention notification skipped: %s", exc)
+
+    def _notify_stalled(self, detail: str) -> None:
+        try:
+            from ..notifications import service
+
+            service.notify_pipeline_stalled(detail, project_path=self.path)
+        except Exception as exc:  # pragma: no cover - best effort
+            log.info("Stall notification skipped: %s", exc)
 
     # --- planning handoff ------------------------------------------------------------------
 
